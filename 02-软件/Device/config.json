@@ -1,0 +1,306 @@
+{
+  "COM_PORT": "AUTO",
+  "BAUD": 115200,
+  "LINK_MODE": "wifi",
+  "ESP_IP": "192.168.1.100",
+  "ESP_PORT": 8080,
+  "WIFI_LISTEN_PORT": 9000,
+  "FRAME_INTERVAL": 1.5,
+  "AUTO_CAPTURE_DELAY": 0.2,
+  "LOG_MAX": 60,
+  "FOCUS_TAP": true,
+  "PAUSE_FRAME_ON_PHOTO": true,
+  "FOCUS_TAP_X": 50,
+  "FOCUS_TAP_Y": 50,
+  "CAPTURE_MODE": "camera",
+  "SHUTTER_METHOD": "tap",
+  "SHUTTER_TAP_X": 50,
+  "SHUTTER_TAP_Y": 86,
+  "SAVE_DIR": "./Storage/photos",
+  "LIB_CODE": "A0-059-01",
+  "START_SERIAL": 1,
+  "THRESHOLD": 25,
+  "AUTO_MODE": false,
+  "FRAME_CROP_TOP": "0",
+  "FRAME_CROP_BOTTOM": "15",
+  "DELETE_REMOTE_AFTER_PULL": true,
+  "MAIN_PRECHECK": true,
+  "SORT_LOCAL_STOP": true,
+  "SORT_LOCAL_DELAY_MS": 500,
+  "SORT_CMD_GAP_MS": 250,
+  "SORT_STOP_DELAY_MS": 500,
+  "PHOTO_STOP_DELAY_MS": 0,
+  "IDENT_STOP_DELAY_MS": 500,
+  "IDENT_SETTLE_MS": 500,
+  "FEED_TO_BELT_MS": 500,
+  "GATE_RAISE_WAIT_MS": 500,
+  "GATE_TO_BELT_MS": 500,
+  "LIGHT_CONFIRM_MS": 500,
+  "PHOTO_WAIT_MS": 500,
+  "SORT_RAISE_HOLD_MS": 1000,
+  "SORT_CYCLE_DELAY_MS": 5000,
+  "SORT_FALLBACK_MS": 30000,
+  "SORT_BELT_PWM": 150,
+  "START_CALIB": true,
+  "CALIB_RATIO_UNIT": 0.82,
+  "CALIB_RATIO_A7": 0.77,
+  "CALIB_SAMPLES": 3,
+  "CALIB_GAP_MS": 150,
+  "CALIB_RATIO": 0.78,
+  "PHONE_ADB": "192.168.1.50:5555",
+  "PHONE_SERIAL": "YOUR_PHONE_SERIAL",
+  "PHONE_AUTO": true,
+  "ADB_PATH": "adb",
+  "GATE_MS": 1200,
+  "GATE_BUFFER_MS": 1000,
+  "LDR_DARK_PCT": 60,
+  "LDR_LIGHT_PCT": 85,
+  "STOP_DELAY_MS": 1000,
+  "LDR_INTERVAL_MS": 300,
+  "LDR_UNIT_TH": 2000,
+  "LDR_A7_TH": 400,
+  "LDR_RATIO": 0.75,
+  "LDR_MODE": "one",
+  "GATE_UP_DEG": 90,
+  "GATE_DOWN_DEG": 120,
+  "SORT_OUTLETS": [
+    {
+      "name": "1#左",
+      "addr": "0x20",
+      "aMs": 400,
+      "bMs": 800
+    },
+    {
+      "name": "2#右",
+      "addr": "0x20",
+      "aMs": 800,
+      "bMs": 400
+    },
+    {
+      "name": "3#左",
+      "addr": "0x21",
+      "aMs": 500,
+      "bMs": 900
+    },
+    {
+      "name": "4#右",
+      "addr": "0x21",
+      "aMs": 900,
+      "bMs": 500
+    },
+    {
+      "name": "5#左",
+      "addr": "0x22",
+      "aMs": 500,
+      "bMs": 900
+    },
+    {
+      "name": "6#右",
+      "addr": "0x22",
+      "aMs": 900,
+      "bMs": 500
+    },
+    {
+      "name": "7#左",
+      "addr": "0x23",
+      "aMs": 500,
+      "bMs": 900
+    },
+    {
+      "name": "8#右",
+      "addr": "0x23",
+      "aMs": 900,
+      "bMs": 500
+    }
+  ],
+  "SORT_OUTLETS_DATE": "2026-11-04 19:48:03",
+  "SPEED_CHANNEL": "0x10",
+  "SPEED_PWM": 150,
+  "SPEED_INTERVAL_MS": 120,
+  "SPEED_RATIO": 0.75,
+  "LDR_THRESHOLDS": {
+    "0x10": 2994,
+    "0x20": 2954,
+    "0x21": 3022,
+    "0x22": 3014,
+    "0x23": 3030,
+    "A7": 598
+  },
+  "FEED_CHANNEL": "A7",
+  "FEED_TH": 300,
+  "FEED_INTERVAL_MS": 200,
+  "PUSH_CHANNEL": "0x10",
+  "PUSH_PWM": 200,
+  "PUSH_TH": 0,
+  "PUSH_INTERVAL_MS": 60,
+  "PUSH_MAX_MS": 4000,
+  "SORT_RULES": {
+    "identMode": "图像识别",
+    "aiKeyword": "",
+    "ruleSet": 1,
+    "sets": {
+      "1": [
+        {
+          "outlet": "1#左",
+          "addr": "0x20",
+          "side": "L",
+          "type": "类别",
+          "value": "融合怪兽/同调怪兽/超量怪兽/连接怪兽",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "2#右",
+          "addr": "0x20",
+          "side": "R",
+          "type": "类别",
+          "value": "通常怪兽/效果怪兽",
+          "type2": "星数区间",
+          "value2": ">=5"
+        },
+        {
+          "outlet": "3#左",
+          "addr": "0x21",
+          "side": "L",
+          "type": "类别",
+          "value": "通常怪兽/效果怪兽",
+          "type2": "星数区间",
+          "value2": "<=4"
+        },
+        {
+          "outlet": "4#右",
+          "addr": "0x21",
+          "side": "R",
+          "type": "类别",
+          "value": "魔法卡",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "5#左",
+          "addr": "0x22",
+          "side": "L",
+          "type": "类别",
+          "value": "陷阱卡",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "6#右",
+          "addr": "0x22",
+          "side": "R",
+          "type": "类别",
+          "value": "仪式怪兽",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "7#左",
+          "addr": "0x23",
+          "side": "L",
+          "type": "类别",
+          "value": "灵摆怪兽",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "8#右",
+          "addr": "0x23",
+          "side": "R",
+          "type": "类别",
+          "value": "衍生物",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "9#",
+          "addr": "",
+          "side": "",
+          "type": "兜底",
+          "value": "",
+          "type2": "",
+          "value2": "",
+          "fixed": true
+        }
+      ],
+      "2": [
+        {
+          "outlet": "1#左",
+          "addr": "0x20",
+          "side": "L",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "2#右",
+          "addr": "0x20",
+          "side": "R",
+          "type": "精确",
+          "value": ""
+        },
+        {
+          "outlet": "3#左",
+          "addr": "0x21",
+          "side": "L",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "4#右",
+          "addr": "0x21",
+          "side": "R",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "5#左",
+          "addr": "0x22",
+          "side": "L",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "6#右",
+          "addr": "0x22",
+          "side": "R",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "7#左",
+          "addr": "0x23",
+          "side": "L",
+          "type": "前缀",
+          "value": ""
+        },
+        {
+          "outlet": "8#右",
+          "addr": "0x23",
+          "side": "R",
+          "type": "类别",
+          "value": "衍生物",
+          "type2": "",
+          "value2": ""
+        },
+        {
+          "outlet": "9#",
+          "addr": "",
+          "side": "",
+          "type": "兜底",
+          "value": "",
+          "type2": "",
+          "value2": "",
+          "fixed": true
+        }
+      ]
+    }
+  },
+  "SORT_IDENT_MODE": "图像识别",
+  "SORT_AI_KEYWORD": "",
+  "FOCUS_WAIT_MS": 600,
+  "CAMERA_PKG": "com.huawei.camera",
+  "CAMERA_LAUNCH_WAIT_MS": 2500,
+  "FEED_BACKOFF_MS": 150,
+  "FEED_BACKOFF_PWM": 120,
+  "FEED_DOUBLE_WAIT_MS": 250
+}

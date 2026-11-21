@@ -1,0 +1,62 @@
+{
+  "name": "测试D",
+  "desc": "",
+  "steps": [
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "在添加商品页"
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "extract-row",
+      "stepDuration": 1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "scroll_clicks": -500,
+          "x1": 600,
+          "x2": 600,
+          "y2": 600,
+          "y1": 800,
+          "keyword": "",
+          "outputVar": "运行状态(输出)",
+          "offset": 1,
+          "keywordVar": "{{卡牌编号}}"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": true,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 70,
+          "y": 100
+        },
+        {
+          "name": "2",
+          "x": 630,
+          "y": 100
+        }
+      ]
+    }
+  ]
+}

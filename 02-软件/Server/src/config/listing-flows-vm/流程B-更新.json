@@ -1,0 +1,1338 @@
+{
+  "name": "流程B-更新",
+  "desc": "更新已有上架(单个)：搜索→筛选→点行→改价→改量→保存",
+  "steps": [
+    {
+      "name": "2.0",
+      "desc": "删除旧内容",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "返回",
+          "x": 70,
+          "y": 100,
+          "text": "backspace"
+        },
+        {
+          "name": "其他",
+          "x": 700,
+          "y": 1280
+        },
+        {
+          "name": "删除",
+          "x": 488,
+          "y": 110
+        }
+      ],
+      "_open": true
+    },
+    {
+      "name": "",
+      "desc": "判断是否有异画",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.3,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{异画}}",
+      "compareOp": "!=",
+      "compareValue": "",
+      "trueJump": 3,
+      "falseJump": 4
+    },
+    {
+      "name": "",
+      "desc": "拼接异画编号",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.3,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "{{卡牌编号}}",
+      "rightVar": "",
+      "template": "{{卡牌编号}}({{异画}})"
+    },
+    {
+      "name": "1.0",
+      "desc": "单击搜索框",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "三击搜索框",
+          "x": 106,
+          "y": 108,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "3.0",
+      "desc": "粘贴卡号",
+      "stepType": "input",
+      "stepVariable": "{{卡牌编号}}",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "粘贴卡号",
+          "x": 0,
+          "y": 0,
+          "text": "{{卡牌编号}}"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "3.5",
+      "desc": "等待粘贴完成",
+      "stepType": "wait",
+      "stepVariable": "",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "等待",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "4.0",
+      "desc": "回车搜索",
+      "stepType": "press",
+      "stepVariable": "",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "回车",
+          "x": 0,
+          "y": 0,
+          "text": "enter"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "5.2",
+      "desc": "再次打开筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "再次打开筛选",
+          "x": 646,
+          "y": 216
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "比较罕贵度",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.3,
+      "stepVariable": "",
+      "actions": [],
+      "jumpTo": null,
+      "compareVar": "{{罕贵度}}",
+      "compareRightVar": "",
+      "compareOp": "==",
+      "compareValue": "NR",
+      "trueJump": 10,
+      "falseJump": 13
+    },
+    {
+      "name": "",
+      "desc": "滚动",
+      "_open": false,
+      "stepType": "scroll",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "scroll_clicks": -50,
+          "x1": 600,
+          "y1": 800,
+          "x2": 600,
+          "y2": 600
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "点击NR",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.3,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 279,
+          "y": 1045
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "跳转",
+      "_open": false,
+      "stepType": "jump",
+      "stepDuration": 0.1,
+      "stepVariable": "",
+      "actions": [],
+      "jumpTo": 14
+    },
+    {
+      "name": "5.3",
+      "desc": "选择罕贵度",
+      "stepType": "click",
+      "stepVariable": "{{罕贵度}}",
+      "stepDuration": 0.3,
+      "actions": [
+        {
+          "name": "20SER",
+          "x": 301,
+          "y": 283
+        },
+        {
+          "name": "QCSER",
+          "x": 456,
+          "y": 283
+        },
+        {
+          "name": "PSER",
+          "x": 295,
+          "y": 362
+        },
+        {
+          "name": "HR",
+          "x": 421,
+          "y": 362
+        },
+        {
+          "name": "HPR",
+          "x": 541,
+          "y": 362
+        },
+        {
+          "name": "ESR",
+          "x": 287,
+          "y": 441
+        },
+        {
+          "name": "ESPR",
+          "x": 419,
+          "y": 441
+        },
+        {
+          "name": "SER",
+          "x": 551,
+          "y": 441
+        },
+        {
+          "name": "SEMR",
+          "x": 298,
+          "y": 520
+        },
+        {
+          "name": "SEPR",
+          "x": 441,
+          "y": 520
+        },
+        {
+          "name": "PR",
+          "x": 566,
+          "y": 520
+        },
+        {
+          "name": "UPR",
+          "x": 288,
+          "y": 599
+        },
+        {
+          "name": "PGR",
+          "x": 415,
+          "y": 599
+        },
+        {
+          "name": "PLR",
+          "x": 541,
+          "y": 599
+        },
+        {
+          "name": "GSER",
+          "x": 295,
+          "y": 678
+        },
+        {
+          "name": "GMR",
+          "x": 432,
+          "y": 678
+        },
+        {
+          "name": "GR",
+          "x": 554,
+          "y": 678
+        },
+        {
+          "name": "UTR",
+          "x": 288,
+          "y": 757
+        },
+        {
+          "name": "CR",
+          "x": 406,
+          "y": 757
+        },
+        {
+          "name": "UR",
+          "x": 517,
+          "y": 757
+        },
+        {
+          "name": "RR",
+          "x": 280,
+          "y": 836
+        },
+        {
+          "name": "USR",
+          "x": 398,
+          "y": 836
+        },
+        {
+          "name": "UKC",
+          "x": 525,
+          "y": 836
+        },
+        {
+          "name": "UMR",
+          "x": 291,
+          "y": 915
+        },
+        {
+          "name": "SR",
+          "x": 412,
+          "y": 915
+        },
+        {
+          "name": "SPR",
+          "x": 529,
+          "y": 915
+        },
+        {
+          "name": "NPR",
+          "x": 289,
+          "y": 994
+        },
+        {
+          "name": "NMR",
+          "x": 420,
+          "y": 994
+        },
+        {
+          "name": "NKC",
+          "x": 551,
+          "y": 994
+        },
+        {
+          "name": "R",
+          "x": 272,
+          "y": 1059
+        },
+        {
+          "name": "RKC",
+          "x": 382,
+          "y": 1059
+        },
+        {
+          "name": "RPR",
+          "x": 509,
+          "y": 1059
+        },
+        {
+          "name": "N",
+          "x": 620,
+          "y": 1059
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "5.4",
+      "desc": "确定筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "确定筛选",
+          "x": 560,
+          "y": 1141
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "6.0",
+      "desc": "点第一个结果",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "点第一个结果",
+          "x": 120,
+          "y": 420,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "提取卡牌信息",
+      "_open": false,
+      "stepType": "extract",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "keyword": "",
+          "outputVar": "语种(输出)",
+          "offset": -1,
+          "keywordVar": "{{游戏版本}}"
+        },
+        {
+          "name": "2",
+          "keyword": "",
+          "outputVar": "罕贵度(输出)",
+          "offset": -2,
+          "keywordVar": "{{游戏版本}}"
+        },
+        {
+          "name": "3",
+          "keyword": "",
+          "outputVar": "编号(输出)",
+          "offset": -3,
+          "keywordVar": "{{游戏版本}}"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "警告B01-比较编号",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{卡牌编号}}",
+      "compareRightVar": "编号(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 18,
+      "falseJump": 54
+    },
+    {
+      "name": "",
+      "desc": "警告B02-比较罕贵度",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{罕贵度}}",
+      "compareRightVar": "罕贵度(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 19,
+      "falseJump": 56
+    },
+    {
+      "name": "",
+      "desc": "滚动",
+      "_open": false,
+      "stepType": "scroll",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "x1": 360,
+          "x2": 360,
+          "y1": 800,
+          "y2": 450
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "提取备注行号",
+      "_open": false,
+      "stepType": "extract-row",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keywordVar": "{{品相备注}}",
+          "keyword": "",
+          "outputVar": "行数(输出)",
+          "offset": 1
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "行号(输出)/6",
+      "_open": false,
+      "stepType": "compute",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "template": "{{行数(输出)}}/6",
+      "leftVar": "行数(输出)"
+    },
+    {
+      "name": "",
+      "desc": "点击对应行",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "行数(输出)",
+      "actions": [
+        {
+          "name": "1",
+          "x": 90,
+          "y": 200
+        },
+        {
+          "name": "2",
+          "x": 90,
+          "y": 320
+        },
+        {
+          "name": "3",
+          "x": 90,
+          "y": 440
+        },
+        {
+          "name": "4",
+          "x": 90,
+          "y": 560
+        },
+        {
+          "name": "5",
+          "x": 90,
+          "y": 680
+        },
+        {
+          "name": "6",
+          "x": 90,
+          "y": 800
+        },
+        {
+          "name": "7",
+          "x": 90,
+          "y": 920
+        },
+        {
+          "name": "8",
+          "x": 90,
+          "y": 1040
+        },
+        {
+          "name": "9",
+          "x": 90,
+          "y": 1160
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "滚动",
+      "_open": false,
+      "stepType": "scroll",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "x1": 360,
+          "y1": 800,
+          "y2": 450,
+          "x2": 360
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "提取商品描述",
+      "_open": false,
+      "stepType": "extract",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keyword": "商品描述",
+          "outputVar": "备注(输出)"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "警告B03-备注比较",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{品相备注}}",
+      "compareRightVar": "备注(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 26,
+      "falseJump": 58
+    },
+    {
+      "name": "",
+      "desc": "选择品相",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "{{卡牌品相}}",
+      "actions": [
+        {
+          "name": "流通品相",
+          "x": 270,
+          "y": 224
+        },
+        {
+          "name": "有瑕疵",
+          "x": 450,
+          "y": 224
+        },
+        {
+          "name": "有损伤",
+          "x": 600,
+          "y": 224
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "判断集换价",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{集换价}}",
+      "compareRightVar": "",
+      "compareOp": "==",
+      "compareValue": "true",
+      "trueJump": 28,
+      "falseJump": 30
+    },
+    {
+      "name": "",
+      "desc": "点击集换价",
+      "_open": false,
+      "stepType": "find-click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 550,
+          "y": 574,
+          "keyword": "设为集换价"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "跳转",
+      "_open": false,
+      "stepType": "jump",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "jumpTo": 33
+    },
+    {
+      "name": "",
+      "desc": "填写价格1",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 299,
+          "y": 563
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "填写价格2",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 299,
+          "y": 563
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "输入价格",
+      "_open": false,
+      "stepType": "input",
+      "stepDuration": 0.5,
+      "stepVariable": "{{价格}}",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "text": "{{价格}}"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "点击数量",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 260,
+          "y": 700
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "输入数量",
+      "_open": false,
+      "stepType": "input",
+      "stepDuration": 0.5,
+      "stepVariable": "{{数量}}",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "text": "{{数量}}"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "提取数据·复查",
+      "_open": false,
+      "stepType": "extract",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keyword": "集换价",
+          "outputVar": "集换价(输出)"
+        },
+        {
+          "name": "2",
+          "keyword": "最低价",
+          "outputVar": "最低价(输出)",
+          "offset": 1
+        },
+        {
+          "name": "3",
+          "keyword": "商品价格",
+          "outputVar": "价格(输出)",
+          "offset": 2
+        },
+        {
+          "name": "4",
+          "keyword": "库存数量",
+          "outputVar": "数量(输出)",
+          "offset": 1
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "清理元字段",
+      "_open": false,
+      "stepType": "clean",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "inputVar": "集换价(输出)",
+          "remove": "元"
+        },
+        {
+          "name": "2",
+          "x": 0,
+          "y": 0,
+          "inputVar": "最低价(输出)",
+          "remove": "元"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "判断是否为集换价",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{集换价}}",
+      "compareRightVar": "",
+      "compareOp": "==",
+      "compareValue": "true",
+      "trueJump": 38,
+      "falseJump": 39
+    },
+    {
+      "name": "",
+      "desc": "警告B04-比较集换价",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "集换价(输出)",
+      "compareRightVar": "价格(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 40,
+      "falseJump": 60
+    },
+    {
+      "name": "",
+      "desc": "警告B05-比较价格",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{价格}}",
+      "compareRightVar": "价格(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 40,
+      "falseJump": 62
+    },
+    {
+      "name": "",
+      "desc": "警告B06-价格大于0",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "价格(输出)",
+      "compareRightVar": "",
+      "compareOp": ">=",
+      "compareValue": "0",
+      "trueJump": 41,
+      "falseJump": 64
+    },
+    {
+      "name": "",
+      "desc": "警告B07-比较数量",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{数量}}",
+      "compareRightVar": "数量(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 42,
+      "falseJump": 66
+    },
+    {
+      "name": "",
+      "desc": "点击保存",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 350,
+          "y": 1130
+        }
+      ],
+      "compareVar": "",
+      "compareRightVar": "",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": null,
+      "falseJump": null
+    },
+    {
+      "name": "",
+      "desc": "提取添加商品页面价格与数量",
+      "_open": false,
+      "stepType": "extract",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keywordVar": "{{品相备注}}",
+          "keyword": "",
+          "offset": -2,
+          "outputVar": "价格(输出)"
+        },
+        {
+          "name": "2",
+          "keyword": "",
+          "outputVar": "数量(输出)",
+          "offset": 1,
+          "keywordVar": "{{品相备注}}"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "去除数量前x",
+      "_open": false,
+      "stepType": "clean",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "remove": "x",
+          "inputVar": "数量(输出)"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "判断集换价",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{集换价}}",
+      "compareRightVar": "",
+      "compareOp": "==",
+      "compareValue": "true",
+      "trueJump": 46,
+      "falseJump": 47
+    },
+    {
+      "name": "",
+      "desc": "警告B11-比较集换价2",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "价格(输出)",
+      "compareRightVar": "集换价(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 48,
+      "falseJump": 74
+    },
+    {
+      "name": "",
+      "desc": "警告B08-比较价格2",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{价格}}",
+      "compareRightVar": "价格(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 48,
+      "falseJump": 68
+    },
+    {
+      "name": "",
+      "desc": "警告B09-比较数量2",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{数量}}",
+      "compareRightVar": "数量(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 49,
+      "falseJump": 70
+    },
+    {
+      "name": "",
+      "desc": "点击返回键",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 70,
+          "y": 100
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "提取输入框编号",
+      "_open": false,
+      "stepType": "extract",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keyword": "取消",
+          "offset": -1,
+          "outputVar": "输入框编号(输出)"
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "警告B10-比较输入框编号",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{卡牌编号}}",
+      "compareRightVar": "输入框编号(输出)",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 52,
+      "falseJump": 72
+    },
+    {
+      "name": "",
+      "desc": "成功B99",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "成功99"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B01-比较编号",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B01-比较编号"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B02-比较罕贵度",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B02-比较罕贵度"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B03-备注比较",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B03-备注比较"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B04-比较集换价",
+      "_open": false,
+      "stepType": "wait",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B04-比较集换价"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B05-比较价格",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B05-比较价格"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B06-价格大于0",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B06-价格大于0"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B07-比较数量",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B07-比较数量"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B08-比较价格2",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B08-比较价格2"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B09-比较数量2",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B09-比较数量2"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    },
+    {
+      "name": "",
+      "desc": "报错B10-比较输入框编号",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B10-比较输入框编号"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "报错B11-比较集换价2",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "运行状态(输出)",
+      "rightVar": "",
+      "template": "报错B11-比较集换价2"
+    },
+    {
+      "name": "",
+      "desc": "END",
+      "_open": false,
+      "stepType": "end",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": []
+    }
+  ]
+}

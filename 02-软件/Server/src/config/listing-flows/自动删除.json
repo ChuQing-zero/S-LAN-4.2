@@ -1,0 +1,54 @@
+{
+  "name": "自动删除",
+  "desc": "",
+  "steps": [
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 61,
+          "y": 321,
+          "_armed": false
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 75,
+          "y": 83,
+          "_armed": false
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 798,
+          "y": 500,
+          "_armed": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>一键上架 · 包看板（原型 v3）</title>
+<!--
+  ============================================================
+  v3 —— 在 v2 这份稿子上加四个改动，**全部还没动真代码**，先把 UI 摆出来给用户审。
+  ============================================================
+  v3 相对 v2 只多这五处，其余（数据、卡行、留档、溯源、拖拽）原样没动：
+
+  ① 包多选 + 依次自动处理
+     包卡片左端多一枚勾选框；勾选条上「全选 / 全不选」+「▶ 开始上架」。
+     按下之后**按勾选顺序一个包一个包地跑**，这个包跑完自动跳下一个。
+     · 真代码要改：auto-listing.vue:291-316 加勾选（抄 batch-recognize.vue:204-216, 2171-2173）、
+       onBatchListing :1237-1317 的请求体 :1251-1255 由单 packCode 改成 packCodes:[...]；
+       后端 auto-execute-vm.js:136 只读单 packCode，要接受数组并并进 :197 的范围过滤。
+       「顺序执行」本身不用新循环 —— :236-359 已经按 index 跨包遍历了。
+
+  ② 一张卡失败自动重试一遍；第二遍仍失败就跳过 + 标红
+     第一遍挂 → 方框转「重试中（第 2 遍）」、该行**不落红**，5 秒后再跑一遍；
+     第二遍还挂 → 该行变红、底下红字写死「重试 1 次仍失败 · 已跳过」，然后**继续下一张**。
+     · 真代码要改：auto-execute-vm.js:355-358 现在是 `if(!isSuccess){abortFlag=true;break}` —— 整批
+       直接断，后面所有包全不跑，得改成 continue；:279-339 要包一层「最多 2 遍」；
+       第一遍失败**不能落 failed**（:331-334），否则前端会当终态。
+       ListingQueue.js:58-62 的 itemStatus 枚举只有 pending/running/success/failed，
+       要加 retrying / skipped（或加 retries / skipped 字段）。
+       ✅ **用户 2026-10-04 拍板：失败不中断**，跑完全部、失败的那张就留红（标红本身就是标记），
+          **不再做任何「失败清单」**——人要看去列表里看红点，不另外汇总。
+       ⚠️ 真代码里「跳过/失败的卡」和归档本来是**死结**：`/complete` 只拦 pending 和 running
+          （batches.js:37-46，「failed 不拦」是加注释明写的），所以红的能过归档，但那张实体卡
+          留在库里 `listed:false` —— 不在凑库池里、订单拣不到、界面上只显示「未凑库」，
+          而「撤回」是当时唯一出口（queues.js:204）。
+          三步走 + 「0 灰 0 红才能确认完成」**把这条死结焊上了**：归档前每个红行必须走三条
+          人工出口之一 —— 重跑 / 标记已上架（queues.js:819，会翻 `Card.listed`）/ 删掉这一行
+          （queues.js:595，真删卡 + 落快照 + 审计）。三条都把那张卡安置好了，没有一条会留悬空锁。
+
+  ③ 「当前正在处理哪张卡」的小方框
+     紧贴批次号那行下面（详情屏里贴头部下面），显示 当前卡牌 · 状态 · 第几个包。
+     · 真代码要改：**服务端不用动** —— item-progress（auto-execute-vm.js:269-272）已经推了
+       code / rarity / detail；是前端 auto-listing.vue:946-949 把它们扔掉了，只用了 index。
+       留住它们、再加这个方框的 DOM 即可（列表屏在 :281-283 下面、详情屏在头部下面）。
+
+  ④ 动作条不再「往上移」
+     「已解析 / 一键上架 / 撤回」那一行、以及包详情里那一行，往下滚时不再滚走。
+     实现：新加一圈 .pin-zone 把它们包住。
+     ⚠️ **真代码不能照抄这个 sticky** —— 真页面是 height:100vh flex + 内部 <scroll-view>
+       （auto-listing.vue:1762 / :1856），sticky 在 scroll-view 里不可靠。
+       真实现要把这几块**移出 scroll-view**、做成 .toolbar-panel 那样的固定兄弟节点。
+       原型这边是整页 body 滚动，sticky 才有效。
+     顺带修掉 v2 的一个老毛病：.detail-head 自己那条 `position:sticky; top:0; z-index:15`
+     和顶栏的 `top:0; z-index:20` 抢位置，详情头一直是被顶栏盖住的 —— 现在交给外层统一管。
+
+  ⑤ 子页签「待上架包 | 已上架包」回来了
+     V1.2.84（提交 39b7503，2026-10-02）有意把这层删掉、升成了顶栏的「已上架库」。
+     用户要它回来。v2 里这套子页签本来就在（.sub-tabs），原样留着没动；
+     变的是顶栏：补上「本地库 / 云端库」两枚惰性页签，**不补「已上架库」** ——
+     它并回子页签了，两个都留就重复。
+     · 真代码要改：auto-listing.vue:24-44 现在是四枚顶栏 + :473-480 的 `sub` 是纯派生值。
+       要恢复子页签，`sub` 得变回真正独立的 state，顶栏那枚「已上架库」相应收掉。
+
+  --------- 怎么演示「重试 → 跳过 → 标红」 ---------
+  v2 的失败是随机的（失败率 15%），跑一趟不一定看得到。v3 加了一枚
+  「演示失败（确定性）」开关，默认开着：**每个包队列的倒数第二张必挂一遍、最后一张必挂两遍**。
+  关掉它退回 v2 的随机逻辑，两套并存。
+  ⚠️ 不能按"第 5 张必挂"来定 —— 这些包很小，排队() 又会剔掉绿的和人工标的，
+     PHNI 只剩 3 张、ALIN/BPRO 只剩 2 张，第 5 张永远轮不到。所以按**队列尾部**数。
+  ============================================================
+  ↓↓↓ 以下是 v2 的注释原文（留着对照，别拿它当 v3 的规范）↓↓↓
+  ============================================================
+  ⚠️ 已过期 —— 这个原型已经落地进真程序了（V1.2.61 ~ V1.2.68，共 11 步）
+  ============================================================
+  真页面：Client/src/pages/auto-listing/auto-listing.vue（V1.2.64 照本原型整页重写）。
+  接口形状、字段名、状态机都以真程序为准；这里留着只当「当时谈的是这个」的对照，
+  **不要再拿它当规范**：下面这些地方原型和真程序已经不一样了 ——
+    · 上架价格：原型错绑在 `jhj`（集换价）上，真程序是独立的 `listingPrice` 字段
+      （原型底部 :1835-1838 自己就标注了这处错位）
+    · 「看得见的模拟跑」（每张 5 秒、随机数据）：**没有**做进真程序，执行体还是
+      ADB / pyautogui 那套真的
+    · 卡位号：真程序里是 `Card.serial`，归档时会压实、撤回时照快照还原
+      （原型只是显示一个数）
+    · 撤销：真程序是「照 listingbatches.snapshot 逐库还原」，不是照原型的本地状态回滚
+  真程序的整条链路与状态流转见 README「一键上架：状态流转总图」。
+  ============================================================
+  一键上架「包看板」原型 v2 —— 纯静态、无依赖、双击就能开
+  ============================================================
+  假数据页面，不连任何接口。卡图是真地址
+  （http://127.0.0.1:3002/api/tcg/card-thumbnail），
+  所以要先让 3002 跑着；出不来会退成红边占位。
+  v2 相对 v1 的改动见页面底部说明。
+  ============================================================
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    background: #F5F5F7; color: #222; font-size: 14px;
+    -webkit-user-select: none; user-select: none;
+  }
+  .app { max-width: 1180px; margin: 0 auto; padding-bottom: 40px; }
+
+  /* ---------- 区块一：顶栏 ----------
+     照 Client/src/pages/auto-listing/auto-listing.vue 的排法：
+       [‹ 返回圆钮] [模式标签 虚拟机AI] ......「一键上架」居中...... [游戏王日文 ▾]
+     标题是 absolute + translateX(-50%) 的**真居中**（不是 flex:1 那种"占满剩下的"），
+     所以左右两组各占多宽都不影响它停在哪 —— 真页面上也是这么写的。 */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 16px 10px; background: #fff; border-bottom: 1px solid #EBEBEF;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .toolbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .tool-btn {
+    width: 32px; height: 32px; border-radius: 16px; background: #F0F0F0;
+    display: flex; align-items: center; justify-content: center; flex: none;
+    font-size: 18px; line-height: 1; color: #4A90D9; cursor: pointer;
+  }
+  /* 模式标签：真页面上绿=在线、红=离线（modeOnline 决定），点了能换模式。 */
+  .mode-tag {
+    font-size: 11px; color: #fff; background: #27AE60;
+    padding: 5px 10px; border-radius: 14px; white-space: nowrap; cursor: pointer;
+  }
+  .tool-title {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: 15px; font-weight: 500; color: #1A1A1A;
+  }
+  .version-selector {
+    display: flex; align-items: center; gap: 4px; background: #F0F0F0;
+    border-radius: 16px; padding: 6px 12px; flex: none; cursor: pointer;
+  }
+  .version-selector .version-text { font-size: 12px; color: #1A1A1A; }
+  .version-selector .arrow { font-style: normal; font-size: 9px; color: #888; }
+
+  /* ---------- 区块二：标签栏 ----------
+     顶层只有一个「一键上架库」：待上架包和已上架包不是两个并列的库，是它底下的两块。
+     红短线 28px 挂在选中的那个字下面（真页面的 .red-line），不是一条铺满的横杠。 */
+  .lib-section { background: #fff; padding: 4px 16px 6px; }
+  /* 四枚了（v3 补回「已上架库」），间距从 32 收到 22 —— 四枚最长的那个
+     「待上架库 / 已上架库」都是 4 个字，420 宽下 32 的间距刚好顶到边。 */
+  .library-tab { display: flex; gap: 22px; padding-left: 8px; }
+  .lib-tab { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+  .lib-tab .lib-text { font-size: 15px; color: #999; }
+  .lib-tab.on .lib-text { color: #1A1A1A; font-weight: 500; }
+  .red-line {
+    width: 28px; height: 3px; background: #FF0000; border-radius: 2px; margin-top: 4px;
+    /* 四枚页签里每枚都带一条，只让选中的那条显形 —— 这样切换时不用去搬 DOM。
+       全塞进模板再用 :not(.on) 藏起来，比在 JS 里 appendChild 稳。 */
+  }
+  .lib-tab:not(.on) .red-line { display: none; }
+  /* 「待上架包 / 已上架包」两块横排平铺 —— 用户要的就是这两个横着的选项 */
+  .sub-tabs {
+    display: flex; gap: 8px; padding: 8px 16px; background: #fff;
+    border-bottom: 1px solid #EBEBEF;
+  }
+  .sub-tab {
+    flex: 1; text-align: center; padding: 6px 0; border-radius: 14px;
+    font-size: 13px; color: #666; background: #F5F5F7; cursor: pointer;
+  }
+  .sub-tab.on { background: #FF0000; color: #fff; font-weight: 600; }
+
+  /* ---------- 区块三：状态 + 操作条（真页面的 filter-bar） ----------
+     左边一列两行（状态字 / 批次号），右边一排动作标签。 */
+  .filter-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    background: #fff; padding: 0 16px 12px; border-bottom: 1px solid #EBEBEF;
+  }
+  .status-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .parse-status { font-size: 13px; font-weight: 600; color: #FF0000; }
+  .parse-status.idle { color: #999; }
+  .parse-status.parsing { color: #FF6600; }
+  .batch-label { font-size: 11px; color: #999; }
+  .action-col {
+    display: flex; gap: 6px; align-items: center;
+    justify-content: flex-end; flex-wrap: wrap;
+  }
+  .filter-tag {
+    display: flex; align-items: center; background: #F0F0F0; border-radius: 14px;
+    padding: 5px 10px; font-size: 11px; color: #1A1A1A;
+    white-space: nowrap; cursor: pointer;
+  }
+  /* 三档动作色照真页面来：开始解析=红、撤回=深灰、查看溯源=蓝 */
+  .filter-tag.parse-tag { background: #FF0000; color: #FFF; }
+  .filter-tag.back-tag { background: #666; color: #FFF; }
+  .filter-tag.trace-tag { background: #4A90D9; color: #FFF; }
+  /* 「整批归档」（v3 三步走之后从动作栏挪到了整屏一枚，见 .finish-all）。
+     这一档留着是给还在用 .filter-tag 的老位置兜底：默认灰（按不动），点亮才红。 */
+  .filter-tag.finish-tag { opacity: .5; cursor: not-allowed; }
+  .filter-tag.finish-tag.on { opacity: 1; cursor: pointer; background: #FF0000; color: #FFF; }
+
+  /* ---------- 区块四：批次概览条 ----------
+     那些"多少个包 / 多少张卡 / 哪个版本"的长句子放这儿 —— 塞进左边那列会把
+     右边一排动作标签挤到换行（420px 竖屏尤其明显），真页面也是这么分两层的。 */
+  .batch-bar {
+    background: #fff; padding: 8px 16px; border-bottom: 1px solid #EBEBEF;
+    font-size: 11px; color: #666;
+  }
+  .batch-bar b { color: #222; }
+  .btn {
+    border: none; border-radius: 20px; padding: 7px 16px; cursor: pointer;
+    font-size: 13px; background: #F0F0F3; color: #333; font-family: inherit;
+  }
+  .btn.primary { background: #FF0000; color: #fff; }
+  /* 原先这里还有一档 .btn.blue（#4A90D9），只被那枚「冻结」用。
+     冻结撤掉之后就没有元素挂它了，删掉 —— 留着一档没人用的按钮色，
+     下一个人会以为"蓝色按钮"是这套界面里的一档，照着用。 */
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { background: #fff; border: 1px solid #DDD; }
+  .btn.sm { padding: 5px 12px; font-size: 12px; }
+
+  /* ---------- 包卡片 ---------- */
+  .pkg-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .pkg {
+    background: #fff; border-radius: 10px; cursor: pointer;
+    /* overflow:hidden 是为了让右边那块矩形按钮**被白板的圆角裁出来** ——
+       按钮自己不加圆角，右上的角和右下的角由这里切。 */
+    overflow: hidden;
+    display: flex; flex-direction: row; align-items: stretch;
+    border-left: 4px solid transparent; transition: box-shadow .15s, opacity .15s;
+  }
+  .pkg:hover { box-shadow: 0 2px 10px rgba(0,0,0,.07); }
+  .pkg.frozen { border-left-color: #4A90D9; }
+  .pkg.done { border-left-color: #22B573; }
+  .pkg.blocked { border-left-color: #FF9500; }
+  .pkg.dragging { opacity: .35; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+
+  .pkg-main { flex: 1; min-width: 0; padding: 10px 12px; }
+  /* 第一行：左边 6 个点 + 进度条 */
+  .pkg-bar { display: flex; align-items: center; gap: 8px; }
+  .pkg .handle {
+    color: #BBB; cursor: grab; font-size: 16px; letter-spacing: -2px;
+    touch-action: none; line-height: 1;
+  }
+  .pkg .handle:active { cursor: grabbing; color: #4A90D9; }
+  .pkg .bar { flex: 1; height: 6px; background: #EEE; border-radius: 3px; overflow: hidden; }
+  .pkg .bar i { display: block; height: 100%; background: #22B573; }
+  /* 第二行：卡包名（左上）+ 张数（横着排在它右边），最右端留给状态 */
+  .pkg .row2 { display: flex; align-items: baseline; gap: 10px; margin-top: 7px; }
+  .pkg .name { font-size: 16px; font-weight: 600; }
+  .pkg .qty { color: #666; font-size: 13px; }
+  .pkg .spacer { flex: 1; }
+  .pkg .state { font-size: 12px; color: #888; }
+  /* 第三行：流程 A/B/C 排成一排 */
+  .pkg .flows { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+  /* 右边一整块「确认完成」：从卡片右边缘开始的矩形（**不是圆角药丸**），
+     右边上下两个角的圆由 .pkg 的 overflow:hidden 裁出来。 */
+  .pkg-finish {
+    width: 38px; flex-shrink: 0; border: none; padding: 0; cursor: pointer;
+    background: #4A90D9; color: #fff; font-family: inherit;
+    border-radius: 0 10px 10px 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pkg-finish .ft { width: 1em; font-size: 13px; line-height: 1.12; word-break: break-all; text-align: center; }
+  .pkg-finish:disabled { background: #DCDCE1; cursor: not-allowed; }
+  .pkg-finish.ok { background: #22B573; }
+  /* 子页签二里那枚「放回」：跟「确认完成」同一个位置、同一个形状，
+     换的是颜色和语义 —— 已经确认完的包上，只剩这一条往回的路。 */
+  .pkg-finish.back { background: #8E8E93; }
+  .pkg-finish.back:hover { background: #757579; }
+
+  /* ---------- 整屏一枚「整批归档」 ----------
+     用户定的形态：不是每个包一枚，是这一屏一整枚。压在包列表底下，
+     正好是"逐包核对完了再整体放行"的位置。没点亮时是灰的、按不动；点亮才是品牌红。 */
+  .finish-all-bar { margin: 14px 16px 24px; }
+  .finish-all {
+    width: 100%; padding: 15px 0; border: none; border-radius: 10px;
+    background: #DCDCE1; color: #FFF; font-family: inherit;
+    font-size: 16px; font-weight: 600; letter-spacing: 2px; cursor: not-allowed;
+  }
+  .finish-all.on { background: #FF0000; cursor: pointer; }
+  .finish-all.on:hover { background: #E60000; }
+  /* 按不动的原因挂在按钮下面 —— 光变灰不说为什么，人只会一遍遍点它。
+     white-space:pre-line 是为了让 归档按钮说明() 里那几个 \n· 真的换行。 */
+  .finish-all-note {
+    margin-top: 8px; font-size: 12px; color: #999; line-height: 1.7;
+    white-space: pre-line; text-align: center;
+  }
+
+  /* ---------- 缺目录那条黄带子上的三枚出口 ---------- */
+  .nb-btns { display: inline-flex; gap: 8px; margin-left: 8px; flex-wrap: wrap; }
+  .nb-btn {
+    border: 1px solid #D9B96A; background: #FFF; color: #8A6D1F;
+    font-family: inherit; font-size: 12px; padding: 3px 10px;
+    border-radius: 6px; cursor: pointer;
+  }
+  .nb-btn:hover { background: #FFF3D6; }
+  /* 「信息登记」块 —— 样式照识别上传页那张卡上的 .card-reg-block：蓝＝还没登记，绿＝已登记。
+     ⚠️ 它跟上面那两枚「就地解决」的按钮**不是一回事**：点它只是往 cardmarks 表记一笔待办，
+        目录没补上、这张卡还是上不了架。所以它单独占一行，不混进 .nb-btns 里，
+        免得看着像"点一下这个包就能上架了"。 */
+  .reg-block {
+    display: inline-block; margin: 2px 6px 2px 0; padding: 3px 10px; border-radius: 6px;
+    font-size: 12px; cursor: pointer; background: #4A90D9; color: #FFF; white-space: nowrap;
+  }
+  .reg-block:hover { background: #3A7BC8; }
+  .reg-block.on { background: #34C759; }
+  .reg-block.on:hover { background: #2FB350; }
+  .nb-line { margin-top: 6px; }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+  .chip.a { background: #E8F5E9; color: #2E7D32; }
+  .chip.b { background: #E3F2FD; color: #1565C0; }
+  .chip.c { background: #FFF3E0; color: #E65100; }
+  .chip.warn { background: #FFF0E0; color: #D97706; font-weight: 600; }
+  .pkg .bar { width: 100px; height: 6px; background: #EEE; border-radius: 3px; overflow: hidden; }
+  .pkg .bar i { display: block; height: 100%; background: #22B573; }
+  .pkg .state { font-size: 12px; width: 66px; text-align: right; color: #888; }
+
+  /* ---------- 包详情 ---------- */
+  /* v3：这里原来有 `position:sticky; top:0; z-index:15`。它和顶栏的
+     `top:0; z-index:20`（上面 .topbar）抢同一个吸附位 —— 结果是详情头一滚上去
+     就被顶栏压住半截。现在吸附统一交给外面那圈 .pin-zone 管，这里退回普通块。 */
+  .detail-head {
+    background: #fff; padding: 14px 16px; border-bottom: 1px solid #EBEBEF;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .detail-head .pname { font-size: 20px; font-weight: 700; }
+  .detail-head .info { color: #666; font-size: 13px; }
+  .detail-head .spacer { flex: 1; }
+
+  .group { margin: 12px 16px; background: #fff; border-radius: 10px; overflow: hidden; }
+  .group > .ghead {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 14px; background: #FAFAFC; cursor: pointer;
+    border-bottom: 1px solid #F0F0F3;
+  }
+  .group .ghead .arrow { color: #999; font-size: 12px; width: 12px; }
+  .group .ghead .gname { font-weight: 600; }
+  .group .ghead .gcount { color: #888; font-size: 13px; }
+
+  /* ===== 包详情：一行一张卡（照 批量上传/识别上传 的卡片样式，不再用横排表格） ===== */
+  /* 以前这里有 `.flow-head`（「流程 A · 新建上架 6 张」那条分组标题，能点着折叠）。
+     用户说这条不要了 —— 流程改成每张卡右端挂一枚红签，一档一档的分组自然就散了，
+     所以整条列表现在是**平的**，只剩下面这一个容器。 */
+  .card-list { display: flex; flex-direction: column; }
+  /* 一条卡片 = 识别上传页的 .card-item：**白底**、不画边框、靠 4px 缝分隔。
+     白卡得浮在浅灰页面(#F5F5F7)上才看得出来 —— 识别上传那边就是这么做的。
+     ⚠️ 右边不留内边距，好让「标记已上架」那条竖块贴到卡片最右边缘。 */
+  .card-row {
+    display: flex; flex-direction: row; align-items: stretch;
+    background: #FFFFFF; position: relative; cursor: pointer;
+    padding: 14px 0 14px 16px; margin-bottom: 4px;
+  }
+  /* 状态**只用底色表达，一律不画边框**（照搬识别上传页那档）：
+     未上架=白 / 已上架=淡绿 / 失败=正红反白 */
+  .card-row.listed { background: #EAF9EF; }
+  .card-row.failed { background: #FF0000; }
+  .card-row.failed .name-main,
+  .card-row.failed .name-sub,
+  .card-row.failed .meta-text,
+  .card-row.failed .cerr,
+  .card-row.failed .noname { color: #FFFFFF !important; }
+  /* 卡密胶囊和异画标签自带底色，红卡上要把底色抽掉才看得见白字 */
+  .card-row.failed .ext-code { background: transparent !important; color: #FFFFFF !important; }
+  .card-row.failed .alt-badge { background: transparent !important; color: #FFFFFF !important; }
+  /* 红卡上那个「×目标」胶囊：默认就是红底白字，再铺红底就消失了 —— 反过来做成白底红字。 */
+  .card-row.failed .cqty { background: #FFFFFF !important; color: #FF0000 !important; }
+  /* 被选为「自动上架起点」的那一张：左边一条蓝竖条 + 一枚「起点」小签。
+     用 inset shadow 而不是 border —— border 会撑大盒子，把右边那条竖块挤歪。 */
+  .card-row.cur { box-shadow: inset 4px 0 0 #4A90D9; }
+  /* 第 1 行右端那两枚小签：头上是「流程A/B/C」，被点中的那张再加一枚「起点」。
+     靠 .tag-group 的 margin-left:auto 顶到最右，紧挨着右边那条竖块 —— 这就是「卡牌的右侧」。
+     名字太长时会自己换行，签子 flex-shrink:0 不会被压扁。 */
+  .tag-group {
+    margin-left: auto; flex-shrink: 0; padding-left: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .start-tag {
+    display: none; font-size: 10px; color: #FFF; background: #4A90D9;
+    border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+  .card-row.cur .start-tag { display: inline-block; }
+  /* ===== 自动上架跑到哪一行 =====
+     机器停在谁身上，就用**同一根蓝竖条**标出来（跑起来的时候，它就是"起点"往下推的结果，
+     换个颜色反而要多认一次），右端那枚「起点」签原地换成「正在执行中」。
+     一张要跑 5 秒，不加个呼吸的话整屏一动不动，看着像卡死了 —— 所以让它一闪一闪，
+     既表示"还活着"，也顺带告诉人"当前进度在这"。 */
+  .card-row.running { box-shadow: inset 4px 0 0 #4A90D9; background: #F2F7FF; }
+  .card-row.running .start-tag { display: none; }   /* 跑到起点自己头上时，「起点」让位 */
+  .run-tag {
+    display: none; font-size: 10px; color: #FFF; background: #4A90D9;
+    border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+  .card-row.running .run-tag { display: inline-block; animation: slan-breath 1.2s ease-in-out infinite; }
+  @keyframes slan-breath { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
+  /* 「流程 A / B / C」：**一档一个颜色**，扫一眼就知道这行归哪一档
+     （原先三档都是同一个红，非得读字才分得出来）。
+     这三个颜色**跟包列表里那三枚 chip 是同一套**（A 绿 / B 蓝 / C 橙）——
+     同一个概念在页面上只该有一个颜色，不然每换一屏都得重新认一遍。
+     白字压在这三个深色上都够清楚。 */
+  .flow-tag {
+    display: inline-block;
+    font-size: 10px; color: #FFFFFF;
+    border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+  .flow-tag.a { background: #2E7D32; }   /* 新建上架 */
+  .flow-tag.b { background: #1565C0; }   /* 更新已有 */
+  .flow-tag.c { background: #E65100; }   /* 多变体更新 */
+  /* 失败的红卡整行翻红，什么底色铺上去都糊 —— 跟 ×N 那颗一样反过来做成白底。
+     但**字要留这一档自己的颜色**：三档全刷成同一个红字，红卡上就白分 A/B/C 了。
+     字色取比底色深一档的同色系，白底上才不飘（亮橙 #E65100 直接当字色在白底上是糊的）。 */
+  .card-row.failed .flow-tag { background: #FFFFFF !important; }
+  .card-row.failed .flow-tag.a { color: #1B5E20 !important; }
+  .card-row.failed .flow-tag.b { color: #0D47A1 !important; }
+  .card-row.failed .flow-tag.c { color: #BF360C !important; }
+
+  .cimg {
+    width: 59px; height: 86px; border-radius: 2px; flex-shrink: 0;
+    background: #EEEEEE; object-fit: cover; pointer-events: none;
+  }
+  /* 真卡图点得动 —— 点一下全屏看大图。所以只给 `img` 开 pointer-events，
+     下面那个没图的红边占位块（div.cimg.miss）保持穿透：点它还是选「起点」，不会弹出个空的全屏。 */
+  img.cimg { pointer-events: auto; cursor: zoom-in; }
+  /* 目录里查不到的编号：红边白底的空框 */
+  .cimg.miss { border: 2px solid #FF3B30; background: #FFF; box-sizing: border-box; }
+
+  /* 中间四行（行高、字号、间距全部对齐 batch-recognize.vue 的 .card-info 一系） */
+  .cinfo {
+    margin-left: 12px; flex: 1; min-width: 0;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  /* flex 只是为了让右边那组小签能靠 margin-left:auto 顶到最右；名字本身是个匿名 flex 项，
+     行高还是 1.8，整行高度不变（实测 27px）。 */
+  /* ⚠️ 类名按**位置**叫，不按语种叫：上面那行是「主名」，下面那行是「副名」。
+     早先这俩叫 .jp-name / .cn-name，是按「上日下中」的语种命名的；
+     现在用户把两行对调成**上中下日**了，再叫 jp-name 就是指着中文名喊日文名 ——
+     以后谁照着类名改语种，一定会改错那一行。 */
+  .name-main {
+    font-size: 15px; font-weight: 600; color: #1A1A1A; line-height: 1.8;
+    display: flex; align-items: center;
+  }
+  .name-main .noname { color: #FF3B30; font-weight: 400; }
+  .name-sub { font-size: 12px; color: #666; margin-top: 2px; }
+  /* 第 3 行：编号 / 罕贵度 / 品相 / 备注 并排一行 */
+  .card-meta { display: flex; flex-direction: row; gap: 8px; margin-top: 4px; }
+  .meta-text { font-size: 11px; color: #666; }
+  .code-text { font-family: Consolas, monospace; }
+  /* 第 4 行：卡密（最左）+ 异画标签 + 右端的 ×目标库存 */
+  /* margin-top 5px 是量出来的：原来 2px 时跟第 3 行的实际缝只有 2.3px，太挤。
+     加到 5px 后缝是 5.0px，等于把这一行往下推了约 3px —— 卡片整体跟着高 2px（114 → 116）。
+     注意 `.cinfo` 是 justify-content:space-between 但此刻**没有富余空间**（内容正好等于卡图的 86px），
+     所以这里加多少就往下推多少，不会被自动分配吃掉。 */
+  .card-codes {
+    display: flex; flex-direction: row; gap: 8px; align-items: center;
+    margin-top: 5px; flex-wrap: wrap;
+  }
+  .ext-code {
+    font-size: 10px; color: #007AFF; background: #F0F4FF;
+    padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+  }
+  /* 异画标签：显示的是**标签自己的值**（原画/初版/异画…），不是「有异画/无异画」。
+     「待填」是占位符 → 灰底，一眼看出这个标签还没人填过。 */
+  .alt-badge {
+    padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+    font-size: 10px; font-weight: 500; white-space: nowrap;
+  }
+  .alt-badge.alt-has { background: rgba(52, 199, 89, 0.12); color: #34C759; }
+  .alt-badge.alt-none { background: rgba(142, 142, 147, 0.10); color: #8E8E93; }
+  /* 卡面右下角这一排，从左到右：详细（灰底黑字）→ 上架价格（白底小输入框）→ ×目标库存（红底白字）。
+     三样**尺寸字号一模一样**（高 19px / 圆角 10px / 11px 600），就靠底色区分，摆一排才齐。
+     整组用 margin-left:auto 顶到那一行最右端。 */
+  .cqty-group { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .cdetail-btn {
+    border: none; font-family: inherit; white-space: nowrap; cursor: pointer;
+    font-size: 11px; font-weight: 600;          /* 跟 ×N 那颗字号字重一致 */
+    border-radius: 10px; padding: 2px 8px;      /* 跟 ×N 那颗圆角内边距一致 */
+    background: #E2E2E8; color: #1A1A1A;
+  }
+  .cdetail-btn:hover { background: #D3D3DA; }
+
+  /* 「上架价格」：**不是按钮，是一个跟左右两颗一样大的小输入框**。
+     手动敲也行；将来自动上架跑完把输出价灌进来也行 —— 两条路都走 `it.jhj` 这一个字段。
+     框里平时显示的是「78.00元」这种给人看的样子（见 价格显示()），一聚焦就换回原样数字。
+     高度写死 19px（配合全局 border-box，含 1px 边框仍与左右两颗等高），不然 input 自带的行高会把它撑高一行。 */
+  .cprice-input {
+    /* 宽 72px 是**缩到底**的数：里面最宽的显示是「1234.00元」（四位数价格）＝ 54.8px，
+       加左右内边距 12 + 边框 2 = 68.8px。比原来的 78px 短了 6px，再缩四位数就要被切掉半个「元」了。
+       （价格不会上四位就还能再缩到 66px 左右。） */
+    width: 72px; height: 19px; font-family: inherit;
+    font-size: 11px; font-weight: 600;          /* 跟左右两颗字号字重一致 */
+    border-radius: 10px; padding: 0 6px;        /* 内边距比左右两颗的 8px 紧 2px，好把宽度腾出来 */
+    border: 1px solid #D8D8DE; background: #FFFFFF;
+    color: #1A1A1A; text-align: center;
+    font-variant-numeric: tabular-nums;         /* 数字等宽，几行价格能对齐 */
+  }
+  .cprice-input::placeholder { color: #A8A8AE; font-weight: 500; }  /* 「上架价格」四个字别太抢眼 */
+  .cprice-input:focus { outline: none; border-color: #4A90D9; }
+  /* 红卡（上架失败）整行翻红，这个框保持白底 —— 白底 + 黑字在红底上最清楚。 */
+
+  /* 只读版（已上架库点进来的）里，价格那一格**不是输入框，是一段死文字**。
+     宽高字号跟左右的「详细」「×N」对齐，看着还是原来那一排，只是敲不进去了。
+     顶上再补一个「红卡上翻白」——它是文字，不像输入框自带白底。 */
+  .cprice-ro {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 72px; height: 19px; border-radius: 10px;          /* 跟 .cprice-input 逐项对齐 */
+    font-size: 11px; font-weight: 600; color: #1A1A1A;
+    background: #FFFFFF; border: 1px solid #E8E8EE;
+    font-variant-numeric: tabular-nums;
+  }
+  .card-row.failed .cprice-ro { color: #FFFFFF !important; background: transparent !important; border-color: rgba(255,255,255,.35) !important; }
+  /* 已上架的行没有右边那条竖条了，右边得自己留出内边距，不然「×N」会贴到卡片边缘。 */
+  .card-row.ro { padding-right: 16px; }
+
+  /* ===== 【暂停用】「集换价」三个大字的文字标签 =====
+     用户否掉的就是这个（卡片右端挤得慌），现在换成了上面那个占位符写「上架价格」的小输入框。
+     样式留着不删，想放回去就在 卡() 里塞进 .cqty-group。配套还留着的：`it.jhj`。 */
+  .cprice-label { font-size: 15px; font-weight: 600; color: #1A1A1A; white-space: nowrap; }
+  .card-row.failed .cprice-label { color: #FFFFFF !important; }
+  /* ===== 【暂停用】到此为止 ===== */
+
+  /* 「×目标库存」，跟着「详细」一起顶到那一行最右端。**红底白字**，点一下弹出三条明细。 */
+  .cqty {
+    font-size: 11px; font-weight: 600; color: #FFFFFF;
+    background: #FF3B30; border-radius: 10px; padding: 2px 8px;
+    cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  /* 点小框冒出来的三条数字。position:fixed，靠 JS 按小框的位置摆。 */
+  .qty-pop {
+    position: fixed; z-index: 60; display: none;
+    background: #1F1F23; color: #FFF; border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; line-height: 1.75;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+    pointer-events: none; white-space: nowrap;
+  }
+  .qty-pop .qp-k { color: #A9A9B2; display: inline-block; min-width: 5em; }
+  .qty-pop .qp-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .qty-pop .qp-total { color: #FFD166; }
+
+  /* 「详细」弹层里：一行 = 一张实体卡（流水号 + 库位号） */
+  .loc-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 2px; border-bottom: 1px solid #F0F0F3;
+  }
+  .loc-row:last-child { border-bottom: none; }
+  .loc-idx { width: 2.2em; font-size: 11px; color: #AAA; text-align: right; }
+  .loc-serial { font-family: Consolas, monospace; font-size: 13px; color: #1A1A1A; }
+  .loc-lib {
+    margin-left: auto; font-size: 11px; color: #4A90D9;
+    background: #F0F4FF; padding: 1px 7px; border-radius: 3px;
+    font-family: Consolas, monospace;
+  }
+  .loc-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 2px 8px; font-size: 12px; color: #888;
+    border-bottom: 1px solid #EBEBEF;
+  }
+
+  /* 撤回确认的小窗 */
+  .cf-box {
+    width: 300px; background: #FFF; border-radius: 12px;
+    padding: 20px 18px 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  }
+  .cf-title { font-size: 16px; font-weight: 600; color: #1A1A1A; margin-bottom: 8px; }
+  .cf-text { font-size: 13px; color: #666; line-height: 1.7; margin-bottom: 16px; }
+  .cf-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .cf-btn {
+    border: none; border-radius: 7px; padding: 7px 16px; font-size: 13px;
+    font-family: inherit; cursor: pointer; background: #F0F0F3; color: #333;
+  }
+  .cf-btn:hover { background: #E4E4E9; }
+  .cf-danger { background: #FF3B30; color: #FFF; }
+  .cf-danger:hover { background: #E6342A; }
+  .cerr { font-size: 12px; color: #FF3B30; margin-top: 4px; }
+
+  /* 右边竖条：点一下在「标记已上架(灰)」和「已上架(绿)」之间来回切 */
+  .cmark {
+    width: 30px; flex-shrink: 0; align-self: stretch; margin: -14px 0 -14px 12px;
+    background: #B8B8BE; display: flex; align-items: center; justify-content: center;
+  }
+  .cmark.on { background: #34C759; }
+  .cmark-text { width: 1em; font-size: 13px; line-height: 1.05; color: #FFF; word-break: break-all; text-align: center; }
+
+  /* 留档 · 行情 那张表还是表格 */
+  table { width: 100%; border-collapse: collapse; }
+  /* 溯源那张表 11 列、表头又是 nowrap，按 100% 宽排的话 420px 竖屏上
+     「品相」会被压成一列一个字（流通品相 → 四行）。给它一个下限宽度，
+     让外边那层 overflow-x:auto 真的滚起来 —— 这张表本来就是横着看的。 */
+  #viewTrace table { min-width: 820px; }
+  thead th {
+    text-align: left; font-size: 12px; color: #888; font-weight: 500;
+    padding: 8px 10px; border-bottom: 1px solid #F0F0F3; white-space: nowrap;
+  }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #F7F7F9; vertical-align: middle; }
+  tbody tr { cursor: default; }
+  tbody tr:hover { background: #FCFCFD; }
+
+  .c-code { font-family: Consolas, monospace; font-size: 13px; }
+  .c-name { color: #333; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num { text-align: center; font-variant-numeric: tabular-nums; color: #333; }
+  .num.ro { color: #555; }
+  .target { font-weight: 600; color: #222; }
+
+  .dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    vertical-align: middle;
+  }
+  .dot.gray { background: #C8C8CC; }
+  .dot.green { background: #22B573; }
+  .dot.red { background: #FF3B30; }
+  .dot.yellow { background: #FFB800; }
+  .ret { color: #666; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ret .jhj { color: #E65100; font-weight: 600; }
+  .ret .none { color: #CCC; }
+
+  .legend {
+    padding: 10px 16px; color: #888; font-size: 12px;
+    display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+
+  /* ===== 输出参数弹层 ===== */
+  .out-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .out-box {
+    background: #FFF; border-radius: 12px; width: 420px; max-width: 92vw;
+    max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .out-head {
+    display: flex; align-items: center; padding: 13px 16px;
+    border-bottom: 1px solid #F0F0F3;
+  }
+  .out-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .out-close { color: #999; cursor: pointer; font-size: 15px; padding: 0 4px; }
+  .out-body { padding: 6px 0 10px; overflow-y: auto; }
+  .out-row {
+    display: flex; padding: 6px 16px; font-size: 13px; gap: 10px;
+    border-bottom: 1px solid #F7F7F9;
+  }
+  .out-k { width: 92px; color: #888; flex-shrink: 0; }
+  .out-v { flex: 1; color: #222; word-break: break-all; }
+  .out-v i { color: #C4C4CA; font-style: normal; }
+  /* 14 项分三组（用户定的），每组顶上压一条灰底小标题。
+     分组只为了**扫读**：一眼知道这堆是"卡的身份"还是"上架内容"，
+     不用逐行读键名去猜。底色比行分隔线略深一档，才看得出它是"一条带子"而不是一行字。 */
+  .out-g {
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 16px 5px; font-size: 11px; font-weight: 600; color: #8A8A92;
+    background: #FAFAFC; border-top: 1px solid #EDEDF2; border-bottom: 1px solid #F4F4F7;
+  }
+  .out-g .out-n { color: #B8B8C0; font-weight: 400; }
+  /* 第一条不带顶边：上面就是弹层标题栏那条分隔线，再来一条就成了双线。 */
+  .out-g:first-child { border-top: none; }
+  .out-none { padding: 26px 16px; color: #999; font-size: 13px; line-height: 1.7; text-align: center; }
+  .out-err { margin: 10px 16px 0; padding: 8px 10px; border-radius: 6px; background: #FFE8E8; color: #C0392B; font-size: 12px; }
+
+  /* ===== 「详细」弹层顶上那两枚翻页按钮 =====
+     一次只亮一枚，亮的那枚就是当前这张脸。竖屏上要够大才点得准 —— 高度给到 34px。
+     两枚等宽平分，右边那枚的数字跟着行数走（实体卡 3 张 / 7 张）。 */
+  .dt-tabs { display: flex; gap: 8px; padding: 10px 16px 0; }
+  .dt-tab {
+    flex: 1; height: 34px; cursor: pointer; font-family: inherit;
+    font-size: 13px; color: #666;
+    background: #FFF; border: 1px solid #E4E4E9; border-radius: 8px;
+  }
+  .dt-tab .dt-n { color: #AAA; font-size: 11px; margin-left: 5px; }
+  .dt-tab.on { background: #EAF2FE; border-color: #4A90D9; color: #1565C0; font-weight: 600; }
+  .dt-tab.on .dt-n { color: #4A90D9; }
+
+  /* ===== 点卡图 → 全屏看大图 ===== */
+  /* 比输出参数弹层（z-index 100）再高一档，免得叠在它下面。整块都是关闭热区。 */
+  .zoom-mask {
+    position: fixed; inset: 0; z-index: 110;
+    background: rgba(0, 0, 0, .88);
+    display: flex; align-items: center; justify-content: center;
+    cursor: zoom-out;
+  }
+  .zoom-img {
+    max-width: 92vw; max-height: 88vh; object-fit: contain;
+    border-radius: 6px; box-shadow: 0 12px 48px rgba(0, 0, 0, .55);
+  }
+  .zoom-tip {
+    position: absolute; left: 0; right: 0; bottom: 26px; text-align: center;
+    color: rgba(255, 255, 255, .68); font-size: 13px;
+  }
+
+  /* ===== 一句性提示条（点编号复制之后冒一下） ===== */
+  .toast {
+    position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%);
+    z-index: 120; background: #1F1F23; color: #FFF;
+    padding: 10px 18px; border-radius: 10px; font-size: 13px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+    white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .18s ease;
+  }
+  .toast.on { opacity: 1; }
+
+  .empty { text-align: center; color: #AAA; padding: 60px 0; }
+  .note-bar {
+    margin: 12px 16px 0; padding: 10px 14px; border-radius: 8px;
+    background: #FFF8E6; color: #8A6D1F; font-size: 13px;
+  }
+  .hint { color: #999; font-size: 12px; padding: 0 16px 6px; }
+
+  /* ============================================================
+     v3 新增：都是④（动作条别往上移）和①（包多选）和③（当前卡方框）要用的
+     ============================================================ */
+
+  /* ---------- ④ 钉住区 ----------
+     把「状态+动作条 / 批次条 / 勾选条 / 当前卡方框」整圈包起来，顶在顶栏正下方。
+     --topbar-h 是顶栏的实测高度（下面 .topbar 是 padding 12+10 + 内容 32 + 底边 1 = 55，
+     取 56 留一点余量）。顶栏自己 z-index 提到 30，永远压在钉住区上面。
+     ⚠️ 真代码**不能照抄**：真页面是 height:100vh flex + 内部 <scroll-view>，
+        sticky 在 scroll-view 里不可靠。真实现要把这几块移出 scroll-view，
+        做成 .toolbar-panel 那样的固定兄弟节点。原型这边是整页滚动，才敢用 sticky。 */
+  :root { --topbar-h: 56px; }
+  .topbar { z-index: 30; }
+  .pin-zone {
+    position: sticky; top: var(--topbar-h); z-index: 20;
+    background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.06);
+  }
+
+  /* ---------- ① 勾选条 ---------- */
+  .sel-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; background: #fff; border-bottom: 1px solid #EBEBEF;
+    font-size: 12px; color: #666;
+  }
+  .sel-bar b { color: #222; }
+  .sel-bar .spacer { flex: 1; }
+  .sel-all { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #333; }
+  .sel-start {
+    border: none; border-radius: 14px; padding: 5px 14px;
+    font-size: 12px; font-family: inherit; cursor: pointer;
+    background: #FF0000; color: #fff;
+  }
+  .sel-start:disabled { background: #DCDCE1; color: #999; cursor: not-allowed; }
+  .sel-start.running { background: #666; }
+
+  /* ---------- ① 包卡片右端的「勾选」竖条 ----------
+     位置是用户定的：**紧挨在「确认完成」左边**，宽度一样（38px）、同一块竖矩形，
+     点一下切换。早先那版把勾选框放在卡片最左端，用户否了 —— 说竖着一条更像按钮、也好点。
+     模样：未选 = 白底 + 灰字「勾选」；已选 = **红底白字「✓ 已选」**，同时整张卡描一圈红边。
+     配色跟「确认完成」那枚一样是纯色块：白 → 红，不引入第三种颜色。 */
+  .pkg-sel {
+    width: 38px; flex-shrink: 0; border: none; padding: 0; cursor: pointer;
+    background: #fff; color: #999; font-family: inherit;
+    border-left: 1px solid #EBEBEF;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pkg-sel .st { width: 1em; font-size: 13px; line-height: 1.12; word-break: break-all; text-align: center; }
+  .pkg-sel:hover { background: #FAFAFA; color: #666; }
+  .pkg-sel.on { background: #FF0000; color: #fff; border-left-color: #FF0000; }
+  .pkg-sel.on:hover { background: #E60000; }
+  .pkg-sel:disabled { cursor: not-allowed; }
+  /* 跑动中整排不能改勾选（名单是起跑那一刻抄下的），但**已勾的照旧显示红条** ——
+     把红条也灰掉，人就看不出这一趟到底勾了哪几个包了。所以只压暗，不换色。 */
+  .pkg-sel.on:disabled { opacity: .55; }
+  .pkg-sel:not(.on):disabled { background: #F7F7F8; color: #D5D5DA; }
+  .pkg.checked { box-shadow: 0 0 0 2px #FF0000; }
+  /* 勾选条自己也要能当"已选"的标记看，所以卡片描红边时把圆角外面的红框让开左边那条
+     状态竖条 —— 那条（frozen 蓝 / done 绿 / blocked 橙）说的是"包的状态"，两回事。 */
+
+  /* 库里那几屏还在用的方形勾选框（勾选条上的「全选」、演示开关）—— 留一个就好。 */
+  .checkbox {
+    width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid #CCC;
+    background: #fff; display: flex; align-items: center; justify-content: center;
+    color: transparent; font-size: 13px; line-height: 1; transition: all .12s;
+  }
+  .checkbox.checked { background: #FF0000; border-color: #FF0000; color: #fff; }
+
+  /* ---------- ② 包标红：红点 + 红 chip ----------
+     用红点 + chip，**不抢** .pkg.frozen/.blocked 左边那条竖条 ——
+     那条是"包的状态"语义（缺目录 / 已冻结），失败是"跑的结果"，两回事。 */
+  .pkg-dot {
+    width: 8px; height: 8px; border-radius: 4px; background: #FF0000;
+    display: inline-block; flex: none;
+  }
+  .chip.bad { background: #FFE5E5; color: #D00000; font-weight: 600; }
+
+  /* ---------- 已上架库：列表末尾那条「张数是样子数」的说明 ----------
+     不写成 .empty（那是占位空态）；这是一条常驻脚注，得贴着列表末尾、往左对齐。 */
+  .lib-note {
+    padding: 10px 12px; border: 1px dashed #E4E4EA; border-radius: 8px;
+    background: #FCFCFD; color: #999; font-size: 11px; line-height: 1.6;
+  }
+  .lib-note b { color: #666; }
+
+  /* ---------- ③ 当前卡方框 ---------- */
+  .cur-card {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 16px; background: #F2F7FF;
+    border-left: 4px solid #4A90D9; border-bottom: 1px solid #EBEBEF;
+    font-size: 12px; color: #333;
+  }
+  .cur-card .cc-label { color: #888; }
+  .cur-card .cc-code { font-weight: 600; }
+  .cur-card .cc-state { font-weight: 600; }
+  .cur-card .cc-batch { color: #999; }
+  /* 四档状态色，跟方框左边那条竖线一起变 */
+  .cur-card.s-running  { border-left-color: #4A90D9; background: #F2F7FF; }
+  .cur-card.s-running  .cc-state { color: #4A90D9; }
+  .cur-card.s-retrying { border-left-color: #FF9500; background: #FFF8EE; }
+  .cur-card.s-retrying .cc-state { color: #FF9500; }
+  .cur-card.s-success  { border-left-color: #22B573; background: #F1FBF6; }
+  .cur-card.s-success  .cc-state { color: #22B573; }
+  .cur-card.s-failed   { border-left-color: #FF0000; background: #FFF3F3; }
+  .cur-card.s-failed   .cc-state { color: #FF0000; }
+  .cur-card.s-idle     { border-left-color: #CCC; background: #FAFAFC; }
+  .cur-card.s-idle     .cc-state { color: #888; }
+
+  /* ---------- ⑤ 顶栏里那两枚惰性页签（本地库 / 云端库）----------
+     真页面这四枚都是能点的。原型只有「待上架库」这一库有内容，
+     另外两枚画成不可点的灰字，点一下弹提示 —— 别做成能切过去，切过去是一片空白。 */
+  .lib-tab.off { cursor: pointer; }
+  .lib-tab.off .lib-text { color: #BBB; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= 区块一：顶部导航栏 =================
+       [‹] [虚拟机AI] …… 一键上架（居中）…… [游戏王日文 ▾]  —— 照真页面的排法。
+       「‹ 返回」是**唯一的**返回入口：在包详情里点它退回包列表，
+       在「查看溯源」里点它退回包列表。（详情头里原来那枚「‹ 包列表」已按用户要求撤掉。） -->
+  <div class="topbar">
+    <div class="toolbar-left">
+      <span class="tool-btn" id="topBack" title="返回">‹</span>
+      <!-- 绿=在线、红=离线（真页面 modeOnline）。点了换模式，原型只弹提示。 -->
+      <span class="mode-tag" id="modeTag">虚拟机AI</span>
+    </div>
+    <h1 class="tool-title">一键上架</h1>
+    <span class="version-selector" id="verSel">
+      <span class="version-text">游戏王日文</span><i class="arrow">▾</i>
+    </span>
+  </div>
+
+  <!-- ================= 区块二：标签栏 =================
+       ⑤ v3 的改动在这一块。真页面（auto-listing.vue:24-44）顶栏就是**四枚**：
+         本地库 / 云端库 / 待上架库 / 已上架库 —— v3 照抄四枚，一枚不少。
+       **底下再多一层**：只有「待上架库」这枚底下挂两枚子页签
+         （待上架包 / 已上架包，见下面 #subTabs）。
+       所以两处**不是重复**，是两层 —— 而且是**前后三站**，不是同一批卡的两个切法：
+         顶栏「待上架库」 ─┬─ 子页签「待上架包」＝ 第①站：还没确认完成的包（能勾、能跑）
+                            └─ 子页签「已上架包」＝ 第②站：本批点过「确认完成」的包（只读，可「放回」）
+         顶栏「已上架库」   ── 第③站：整批归档过的卡，**按库位（A0-000-XX）分**，跨批次
+       三站的走法（用户定的口径）：
+         ① 跑完、且**0 灰 0 红** → 点包的「确认完成」→ 进 ②；
+         ② 核对无误 → 按整屏那枚**「整批归档」**→ 进 ③（这一步才真动库）；
+         ③ 按库位核对实物，点进库位看**这个盒子里的全部卡（跨包）**。
+       所以 ②③ 不是一回事：② 是**中转站**（还没进库，随时能放回），③ 是**终点站**（已归档）。
+       前两枚（本地库 / 云端库）在原型里没有内容，画成惰性灰字，点了只弹提示。
+       ⚠️ 真代码要这么做，得让 auto-listing.vue:473-480 的 `sub` 变回**真正独立的 state**
+          —— 它现在是 `topTab === 'listed' ? 'listed' : 'pending'` 的纯派生值，
+          子页签跟顶栏「已上架库」并存的话，派生就不成立了。 -->
+  <div class="lib-section">
+    <div class="library-tab">
+      <div class="lib-tab off" id="tabLocal"><span class="lib-text">本地库</span></div>
+      <div class="lib-tab off" id="tabCloud"><span class="lib-text">云端库</span></div>
+      <div class="lib-tab on"  id="tabListing"><span class="lib-text">待上架库</span><i class="red-line"></i></div>
+      <div class="lib-tab"     id="tabListed"><span class="lib-text">已上架库</span><i class="red-line"></i></div>
+    </div>
+  </div>
+  <!-- 子页签只在「待上架库」底下出 —— 「已上架库」是另一屏东西，它底下没有子页签。
+       由 切顶栏() 收放。 -->
+  <div class="sub-tabs" id="subTabs">
+    <div class="sub-tab on" data-tab="pending">待上架包</div>
+    <div class="sub-tab" data-tab="listed">已上架包</div>
+  </div>
+
+  <!-- ================= 待上架包 ================= -->
+  <div id="viewPending">
+    <!-- ④ 钉住区：往下滚包列表时，这一整块顶在顶栏下面不动。
+         真代码**不能照抄这个 sticky**（见页头注释和第 ④ 条），要把这几块移出 <scroll-view>。 -->
+    <div class="pin-zone" id="pinPending">
+      <div class="filter-bar">
+        <div class="status-col">
+          <span class="parse-status" id="pStatus">已解析</span>
+          <span class="batch-label" id="pBatch">批次：—</span>
+        </div>
+        <div class="action-col">
+          <span class="filter-tag parse-tag" id="btnParse">开始解析</span>
+          <!-- 「撤回」是全代码里唯一能把**整批**解锁的路（queues.js:204 那句
+               `$set: { listingBatchId: null, status: 'pending' }`，grep 过没有第二处）。
+               解析分错了、库选错了、这一批整个不要了，就靠它把这批实体卡放回池子。
+               撤掉它等于把没跑完的那批卡永久锁死 —— libraries/index.js:171 会一直回 423
+               「该库已被上架批次锁定，请先撤回解析」，而界面上再没有别的出口。所以留着。
+               ★ 它**不再是失败卡片的唯一出路**了（这是 v3 最重要的一处纠正）：
+                 单张卡跑红了，出路是包详情里那三条人工通道（重跑 / 标记已上架 / 删掉这一行），
+                 为一张卡退掉整批不划算。撤回留给「整批不要了」这种量级的决定。 -->
+          <span class="filter-tag back-tag" id="btnRevert">撤回</span>
+          <span class="filter-tag trace-tag" id="btnTrace">查看溯源</span>
+        </div>
+      </div>
+      <div class="batch-bar" id="pBar"></div>
+
+      <!-- ① 勾选条：勾几个包、一次把这几包按顺序跑完。
+           「全选」和「开始上架」的可见状态只由 渲染勾选条() 改，别处不要各写一份。 -->
+      <div class="sel-bar">
+        <span class="sel-all" id="selAll">
+          <span class="checkbox" id="selAllBox">✓</span>全选
+        </span>
+        <span>已选 <b id="selCount">0</b> 个包 · 共 <b id="selTotal">0</b> 个</span>
+        <span class="spacer"></span>
+        <!-- 演示开关：默认开着，让「重试 → 跳过 → 标红」这条路**一定**跑得出来。
+             关掉就退回 v2 那套 15% 随机失败。真代码没有这个开关，它是原型专用的。 -->
+        <span class="sel-all" id="selDemo" title="关掉就退回 v2 的 15% 随机失败">
+          <span class="checkbox checked" id="selDemoBox">✓</span>演示失败（确定性）
+        </span>
+        <button class="sel-start" id="btnBatchRun" disabled>▶ 开始上架</button>
+      </div>
+
+      <!-- ③ 当前卡方框（列表这一屏）。
+           数据源跟详情屏那个是**同一个函数** 渲染当前卡框() —— 两种发起方式共用一套。 -->
+      <div class="cur-card s-idle" id="curCardList" style="display:none"></div>
+    </div>
+
+    <div class="pkg-list" id="pkgList"></div>
+    <!-- 这两块在"待上架包是空的"时候必须收起来：教人怎么拖包的顺序、怎么看卡片的底色，
+         底下一张卡都没有，说了等于没说，还把空态挤在中间。刷新统计() 控制它们的显隐。 -->
+    <div class="hint" id="pkgHint">按住左侧 ⋮⋮ 拖动可调整包顺序（鼠标 / 手指都行）</div>
+
+    <div class="legend" id="pkgLegend">
+      <span style="color:#888">包内卡片看底色（不画边框）：</span>
+      <span><i class="dot gray"></i> 灰底 = 还没上架</span>
+      <span><i class="dot green"></i> 淡绿底 = 已上架</span>
+      <span><i class="dot red"></i> 红底 = 失败（<b>自动重试过 1 遍，仍失败，已跳过</b>）</span>
+      <span style="color:#888">包卡片头上那个红点：</span>
+      <span><i class="pkg-dot"></i> 这个包里有失败的卡（红底，点进去处理）</span>
+      <span style="color:#888">卡上右端那枚流程签：</span>
+      <span><span class="flow-tag a">流程A</span> 新建上架</span>
+      <span><span class="flow-tag b">流程B</span> 更新已有</span>
+      <span><span class="flow-tag c">流程C</span> 多变体更新</span>
+      <span style="color:#4A90D9;font-weight:600">▌左边一条蓝竖条 + 「起点」签 = 自动上架从这里开始</span>
+    </div>
+  </div>
+
+  <!-- ================= 包详情 ================= -->
+  <div id="viewDetail" style="display:none">
+    <!-- ④ 详情这一屏的钉住区：头部 + 当前卡方框。往下滚卡列表时这两块不动。
+         这就是用户说的第二个「往上移」——「待上架包那个里边，要是多张卡牌的话，
+         一键自动上架那一行也会往上移」。 -->
+    <div class="pin-zone" id="pinDetail">
+      <div class="detail-head">
+        <span class="pname" id="dName">PHNI</span>
+        <span class="info" id="dInfo"></span>
+        <span class="spacer"></span>
+        <!-- 这枚状态字由 打开包() 填：跑完的显示「✅ 已完成 xx」、有编号查不到目录的显示
+             「⚠ 不可上架」，其余（待上架的普通包）**整枚藏起来**。原来这儿常显「🔒 已冻结」，
+             已按用户要求撤掉 —— 锁定是解析的副产品，不是一个要在界面上挂着的状态。 -->
+        <span id="dState" style="color:#4A90D9;font-size:13px;display:none"></span>
+        <button class="btn primary sm" id="btnAuto">▶ 自动上架</button>
+        <button class="btn ghost sm" id="btnStop">■ 急停</button>
+      </div>
+      <!-- ③ 当前卡方框（详情这一屏）。跟列表屏那个同源，由 渲染当前卡框() 一起刷。 -->
+      <div class="cur-card s-idle" id="curCardDetail" style="display:none"></div>
+    </div>
+    <div class="note-bar" id="dBanner" style="display:none"></div>
+    <div class="hint" id="dHint">点任意一行设为起点 → 点「自动上架」就从这一行往下跑；绿色的自动跳过。</div>
+    <div id="dGroups"></div>
+  </div>
+
+  <!-- ================= 已上架包（子页签二）＝ 三步走的第二站 =================
+       放的是**这一批**点过「确认完成」的包：包内 0 灰 0 红，人核对过了，但**还没进库位**。
+       它是中转站，不是终点 —— 所以底下那枚「整批归档」才是这一屏的主按钮。 -->
+  <div id="viewListed" style="display:none">
+    <div class="filter-bar">
+      <div class="status-col">
+        <span class="parse-status idle" id="lStatus">已上架</span>
+        <span class="batch-label" id="lBatch">0 张卡</span>
+      </div>
+      <div class="action-col">
+        <span class="filter-tag trace-tag" id="btnTrace2">查看溯源</span>
+      </div>
+    </div>
+    <div class="pkg-list" id="listedList"></div>
+    <!-- 整屏一枚「整批归档」（用户定的形态：不是每个包一枚，是这一屏一整枚）。
+         钉在列表**下面**而不是上面：这一屏的操作顺序是先逐包核对、最后才整批放行，
+         按钮压在最底下，正好是"看完了再按"的位置。
+         点亮判据见 整批可归档()：待上架包必须空了、待归档包得有东西。 -->
+    <div class="finish-all-bar">
+      <button class="finish-all" id="btnFinishAll">整批归档</button>
+      <div class="finish-all-note" id="finishAllNote"></div>
+    </div>
+  </div>
+
+  <!-- ================= 已上架库（顶栏第四枚）＝ 三步走的第③站 =================
+       跟「已上架包」子页签（第②站）**不是一回事，也不是同一批卡的两种切法**：
+         · ② 已上架包（子页签）—— 按**包**看：本批点过「确认完成」、还没归档的。
+                                     中转站，能「放回」，库位**还没动过**。
+         · ③ 已上架库（这一屏）  —— 按**库**看：**整批归档之后**的卡躺在哪个库位。
+                                     终点站，退不回来（只能整批撤回）。
+       为什么要分两屏：一个包里的卡**散落在好几个库位**（`库位池` 那个映射就是照
+       真库抄的：1,588 个库位里 1,487 个混装多个包），所以「PHNI 上完了」跟
+       「A0-000-07 这个盒子里的卡上完了」是两件不一样的事。要按盒子去核对实物，只能看这屏。
+       点一个库位 → 进「库位详情」：那个盒子里的**全部卡，跨包跨批次**（用户要的口径）。
+       ★ 分组键怎么来的（真代码照这个走）：`ListingQueue.serialList` 里的每一段
+         `A0-000-07-0042`，**前 9 位就是库位号**。原型的 实体卡(i) 产出的 serial
+         跟这个格式一字不差，所以这屏是拿真格式在演。 -->
+  <div id="viewLibrary" style="display:none">
+    <div class="filter-bar">
+      <div class="status-col">
+        <span class="parse-status" id="kStatus">已上架</span>
+        <span class="batch-label" id="kBatch">0 个库位</span>
+      </div>
+      <div class="action-col">
+        <span class="filter-tag trace-tag" id="btnTrace3">查看溯源</span>
+      </div>
+    </div>
+    <div class="pkg-list" id="libList"></div>
+  </div>
+
+  <!-- ================= 库位详情（一个盒子里的全部卡，跨包） =================
+       三步走的终点站里唯一可下钻的一层。用户要的口径：「看这个库位里的全部卡（跨包）」。
+       全员只读 —— 已经归档进库位的卡不该在这一层改，要改只能整批撤回。 -->
+  <div id="viewLibDetail" style="display:none">
+    <div class="filter-bar">
+      <div class="status-col">
+        <span class="parse-status idle" id="ldName">A0-000-00</span>
+        <span class="batch-label" id="ldInfo">0 张</span>
+      </div>
+      <div class="action-col">
+        <span class="filter-tag" id="ldBack">‹ 返回库位列表</span>
+      </div>
+    </div>
+    <div class="hint" style="display:flex;gap:10px;align-items:center">
+      <span id="ldBad">全部成功</span>
+      <span class="spacer" style="flex:1"></span>
+      <span style="color:#999">点任意一行 → 看这个包当时的全貌</span>
+    </div>
+    <div id="ldBody"></div>
+  </div>
+
+  <!-- ================= 查看溯源（留档 · 行情） =================
+       这一屏原来是个叫「留档 · 行情」的顶层 tab，现在收进「查看溯源」里 ——
+       它是**查**的动作，不是"和待上架/已上架并列的另一块库"。
+       真页面的 goHistory 也是跳到这一类的历史视图，不是第四个库。
+       ⚠️ 没做成弹层：这张表 11 列、要 ~800px，420px 的弹层里只能靠横向滚，
+          而看这张表就是这屏的唯一用途，滚着看等于没看。所以给它整屏。 -->
+  <div id="viewTrace" style="display:none">
+    <div class="filter-bar">
+      <div class="status-col">
+        <span class="parse-status" id="tTitle">留档 · 行情</span>
+        <span class="batch-label">共 <b id="aRows">0</b> 条记录 · 一行 = 一张卡的存档</span>
+      </div>
+      <div class="action-col">
+        <span class="filter-tag" id="traceBack">‹ 返回包列表</span>
+      </div>
+    </div>
+    <div class="group" style="margin-top:12px; overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th style="width:64px">包</th>
+          <th>编号 / 上传卡名</th>
+          <th style="width:62px">罕贵</th>
+          <th style="width:78px">品相</th>
+          <th style="width:52px">备注</th>
+          <th style="width:46px">异画</th>
+          <th style="width:58px" class="num">原始库存</th>
+          <th style="width:58px" class="num">本次上架</th>
+          <th style="width:58px" class="num">目标库存</th>
+          <th style="width:132px">集换价 / 最低价</th>
+          <th style="width:62px" class="num">结果</th>
+        </tr></thead>
+        <tbody id="aBody"></tbody>
+      </table>
+    </div>
+    <div class="hint">
+      这张表两用：<b>价格两列 = 行情</b>（不用再爬站）；<b>其余列 = 追溯存档</b> —— 记录每张卡的
+      原始库存 / 本次上架 / 目标库存 / 上传的编号与卡名 / 是否成功，断电或库丢了也能照着反推出正确张数。
+    </div>
+  </div>
+
+  <!-- 点「× 目标库存」那个小框时冒出来的三条数字 -->
+  <div id="qtyPop" class="qty-pop"></div>
+
+  <!-- ================= 「详细」弹层：一个弹层，两张脸 =================
+       脸① 输出参数（14 项，自动上架跑完返回的那一串）
+       脸② 实体卡（这一行背后每张实体卡的流水号 / 库位号）
+       顶上那两枚按钮翻页，**默认停在「输出参数」**。
+       ⚠️ 为什么是翻页不是左右分栏：这页面是在手机竖屏上测的，420px 宽的弹层并排
+          放不下两块，硬分会挤成两条细缝。翻页一次只显示一块，宽度全都是它的。 -->
+  <div id="dtMask" class="out-mask" style="display:none">
+    <div class="out-box">
+      <div class="out-head">
+        <span class="out-title" id="dtTitle">卡牌详情</span>
+        <span class="out-close" id="dtClose">✕</span>
+      </div>
+      <div class="dt-tabs">
+        <button class="dt-tab on" data-face="out">输出参数<span class="dt-n" id="dtOutN"></span></button>
+        <button class="dt-tab" data-face="loc">实体卡<span class="dt-n" id="dtLocN"></span></button>
+      </div>
+      <div class="out-body" id="dtBody"></div>
+    </div>
+  </div>
+
+  <!-- 把「已上架」撤回时要问一句 -->
+  <div id="cfMask" class="out-mask" style="display:none">
+    <div class="cf-box">
+      <div class="cf-title" id="cfTitle">取消上架？</div>
+      <div class="cf-text" id="cfText"></div>
+      <div class="cf-btns">
+        <button class="cf-btn" id="cfNo">取消</button>
+        <button class="cf-btn cf-danger" id="cfYes">确定撤回</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 点卡图 → 全屏看大图。点任意处或按 Esc 关掉。 -->
+  <div id="zoomMask" class="zoom-mask" style="display:none">
+    <img id="zoomImg" class="zoom-img" alt="">
+    <div id="zoomTip" class="zoom-tip">点任意处关闭</div>
+  </div>
+
+  <!-- 一句性的提示条。点编号复制之后冒一下。 -->
+  <div id="toast" class="toast"></div>
+
+</div>
+
+<script>
+// ============================================================
+// 假数据。卡密/编号/罕贵都是真的（从 cardcatalogs 取），所以卡图能真出来。
+// 只有 TTP1-JP006 / DBAG-JP003 是真的「目录里查不到」→ 演示红边无图。
+// ============================================================
+const IMG = (ext, code, rarity) =>
+  `http://127.0.0.1:3002/api/tcg/card-thumbnail?password=${ext}&code=${encodeURIComponent(code)}&rarity=${encodeURIComponent(rarity)}`
+
+// 全屏看大图走 **/card-image（原图）**，不能拿上面那张缩略图撑大 —— 那玩意儿是 200px 的 WebP，
+// 全屏一放就糊。两个接口的参数契约一样（password + code + rarity，同样只认整段命中）。
+const 大图 = (ext, code, rarity) =>
+  `http://127.0.0.1:3002/api/tcg/card-image?password=${ext}&code=${encodeURIComponent(code)}&rarity=${encodeURIComponent(rarity)}`
+
+// 卡密显示时统一补齐到 8 位 —— 日本卡的卡密固定 8 位，但库里 2,971 行是被当数字存过的，
+// 前导零丢了（例：官方 03723262，库里是 3723262）。**只在前端补，不动数据。**
+const 补零 = (ext) => (/^\d+$/.test(ext || '') ? String(ext).padStart(8, '0') : (ext || ''))
+
+// 「上架价格」那一格的显示规矩：**框里显示的是给人看的，一定是「两位小数 + 元」**。
+// 输 78 → 显示 78.00元；输 78.1 → 78.10元；输 78.126 → **只留两位，多的那位直接砍掉**
+// （故意不四舍五入 —— 免得显示出来的价比你敲进去的还高）。
+// ⚠️ 但这只是**显示**：真正存起来的（`it.jhj`）永远是你原样敲的那串，
+//    不补零、不加「元」、不砍位。显示和数据是两码事，别把格式化后的东西写回去。
+// 按字符串切而不是乘 100 取整：`78.12 * 100` 在浮点下是 7811.999…，截断会变成 78.11。
+const 价格显示 = (v) => {
+  const s = String(v == null ? '' : v).trim()
+  const m = s.match(/^(\d*)(?:\.(\d*))?$/)
+  if (!m || (!m[1] && !m[2])) return s        // 空的、或压根不是数字（带字母/负号）就原样显示，别吞掉
+  return (m[1] || '0') + '.' + (m[2] || '').padEnd(2, '0').slice(0, 2) + '元'
+}
+
+// ===== 一行的身份键 =====
+// ⚠️ **必须带上异画序号（`ai`）**。同一个「编号 + 罕贵」会有好几行 —— 原画和异画是两笔
+// 独立的库存（真库 306 条异画就是这么存的，`altLabel` 一个「初版」一个「异画」）。
+// 只用 `编号|罕贵` 当键，这两行会撞成同一个键，于是点「异画」那一行，
+// 改的价格、选中的起点、复制的编号、弹出来的明细，**全是它上面那行「原画」的数据**。
+const 行键 = (i) => `${i.code}|${i.rarity}|${i.ai || 0}`
+
+// 按行键把那行数据捞回来。上面所有 `data-*` 挂的都是行键，统一走这里，别各自 split。
+function 找行(键) {
+  const [code, rar, ai] = String(键 || '').split('|')
+  return 当前包.items.find(
+    x => x.code === code && x.rarity === rar && String(x.ai || 0) === String(ai || 0)
+  )
+}
+
+// 编号后缀里那串数字：`PHNI-JP031` → 31。取不到就当 0，排最前。
+// ⚠️ 别直接拿编号字符串比大小 —— 那样 JP100 会排在 JP031 前面（字典序，'1' < '3'）。
+const 后缀号 = (code) => {
+  const m = String(code || '').toUpperCase().match(/-[A-Z]*(\d+)$/)
+  return m ? parseInt(m[1], 10) : 0
+}
+
+// 列表的排法（用户定的）：**流程 A→B→C 优先**，同一档内再按编号后缀的数字升序。
+// 所以不能假设「JP001 一定排在 JP002 前面」—— 编号是**档内**的次序，跨档时流程说话：
+// JP001 要是被判成 B 档、JP002 是 A 档，那 JP002 就排在前面。这是对的，不是乱。
+// 编号和罕贵都相同时（同一编号不同罕贵、原画/异画）再用 异画序号 兜一层，保证顺序稳定不来回跳。
+const 排序用 = (a, b) =>
+  (a.flow === b.flow ? 0 : a.flow < b.flow ? -1 : 1) ||
+  后缀号(a.code) - 后缀号(b.code) ||
+  String(a.rarity || '').localeCompare(String(b.rarity || '')) ||
+  ((a.ai || 0) - (b.ai || 0))
+
+// 每个包的卡实际散落在哪几个待上架库位。真库里 1,588 个库位有 1,487 个是混装多个包的。
+// LEDE / DUAD 是**已经归档进库位**的那两个包（见下面 已归档包），也放进来：
+// 不然它们落到兜底的 ['A0-000-01']，「已上架库」那一屏就只剩一个库位，
+// 看不出「一个库位混装好几个包」这件事 —— 而那正是那一屏存在的理由。
+// 故意让 LEDE 和 DUAD **共用 A0-000-03**，好把「混装」演出来。
+const 库位池 = {
+  PHNI: ['A0-000-07', 'A0-000-08', 'A0-000-09'],
+  ALIN: ['A0-000-12', 'A0-000-13'],
+  BPRO: ['A0-000-21'],
+  TTP1: ['A0-000-33', 'A0-000-34'],
+  INFO: ['A0-000-41'],
+  QCAC: ['A0-001-05'],
+  QCLP: ['A0-001-11'],
+  LEDE: ['A0-000-02', 'A0-000-03'],
+  DUAD: ['A0-000-03', 'A0-000-05'],
+}
+
+// 一行背后是「本次上架 N 张」实体卡，每张一个流水号（格式跟真库一致：{库位号}-{4位序号}）。
+//
+//   ⚠️ 号的来源换过一次。早先拿 `编号长度*7 + 罕贵度长度*13` 算起点 —— DUAD-JP001/002/003
+//   三个算出来是**同一个号**，摊进「库位详情」就是三张卡共用一个流水号，看着像 bug。
+//   而且那个式子跟卡本身没关系，改一次编号号就变，跟"实体卡的号是贴在盒子上的、不该变"相冲。
+//   现在改成**一张卡一个自己的号**（`一张卡的号`），跟编号、罕贵度都无关：
+//   `起 = 序号 * 10`，乘 10 是给「数量(输出)」留余量 —— 同一行 2 张要连占 2 个号，
+//   不乘就会串到下一行头上（第 5 行 2 张 → 0005/0006，第 6 行 → 0006，撞）。
+//   发号的活见下面「一张卡的号」那段（要等 包 / 已归档包 都声明完才能跑）。
+const 一张卡的号 = new WeakMap()
+let 临时号 = 900   // 兜底：页面加载后才冒出来的行（真页面不会有，原型里防一手）
+
+// 归档过的卡另说 —— 整批归档那一步真代码会把库内卡位**重排成连续编号**
+// （compactLibrarySerials），所以进库之后号的来源是这里，不是上面那个。
+const 库内号 = new WeakMap()
+
+// 按库位从 0001 起重新发号，覆盖 库内号。**只有已归档的包**参与。
+// 顺序 = `已归档包` 的数组顺序（归档 = 待归档包.concat(已归档包)，所以新的在前），
+// 只看数组不看时间，刷新多少次都一样。
+function 重排卡位() {
+  const 下一位 = new Map()
+  const 取 = (lib) => { const n = (下一位.get(lib) || 0) + 1; 下一位.set(lib, n); return n }
+  for (const p of 已归档包) for (const it of (p.items || [])) {
+    const 池 = 库位池[(it.code || '').split('-')[0]] || ['A0-000-01']
+    const 号 = []
+    for (let k = 0; k < it.add; k++) 号.push(取(池[k % 池.length]))
+    库内号.set(it, 号)
+  }
+}
+
+function 实体卡(i) {
+  const 池 = 库位池[(i.code || '').split('-')[0]] || ['A0-000-01']
+  const 排好的 = 库内号.get(i)
+  if (排好的) return 排好的.map((n, k) => {
+    const lib = 池[k % 池.length]
+    return { serial: lib + '-' + String(n).padStart(4, '0'), lib }
+  })
+  if (!一张卡的号.has(i)) 一张卡的号.set(i, ++临时号)
+  const 起 = 一张卡的号.get(i) * 10
+  const 出 = []
+  for (let k = 0; k < i.add; k++) {
+    const lib = 池[k % 池.length]
+    出.push({ serial: lib + '-' + String(起 + k).padStart(4, '0'), lib })
+  }
+  return 出
+}
+
+let 包 = [
+  {
+    pack: 'PHNI', order: 1, state: 'frozen', total: 1638,
+    items: [
+      { code: 'PHNI-JP031', rarity: 'N',     ext: '12612470', jp: '童妖 茶壺',                 cn: '童妖 茶壶',       cond: '流通品相', note: '78品', alt: '', ai: 0, old: 3, add: 2, flow: 'A', st: 'gray' },
+      { code: 'PHNI-JP029', rarity: 'N',     ext: '85123771', jp: 'ゴブリン降下部隊',           cn: '格布林降下部队',   cond: '流通品相', note: '',     alt: '', ai: 0, old: 1, add: 1, flow: 'B', st: 'gray' },
+      { code: 'PHNI-JP001', rarity: 'SR',    ext: '90829280', jp: 'スピリット・オブ・ユベル',    cn: '尤贝尔之精灵',     cond: '轻微瑕疵', note: '9品',  alt: '', ai: 0, old: 0, add: 1, flow: 'A', st: 'green', jhj: '128.00', low: '96.00',
+        outs: { '编号(输出)': 'PHNI-JP001', '罕贵度(输出)': 'SR', '中文卡名(输出)': '尤贝尔之精灵', '中文别名(输出)': '', '语种(输出)': '日文',
+                '游戏版本(输出)': '游戏王日文', '行数(输出)': '1', '运行状态(输出)': '成功99', '数量(输出)': '1', '价格(输出)': '120.00',
+                '集换价(输出)': '128.00', '最低价(输出)': '96.00', '备注(输出)': '', '输入框编号(输出)': 'PHNI-JP001' } },
+      { code: 'PHNI-JP001', rarity: 'SER',   ext: '90829280', jp: 'スピリット・オブ・ユベル',    cn: '尤贝尔之精灵',     cond: '流通品相', note: '',     alt: '', ai: 0, old: 2, add: 1, flow: 'B', st: 'green', jhj: '410.00', low: '380.00',
+        outs: { '编号(输出)': 'PHNI-JP001', '罕贵度(输出)': 'SER', '中文卡名(输出)': '尤贝尔之精灵', '中文别名(输出)': '', '语种(输出)': '日文',
+                '游戏版本(输出)': '游戏王日文', '行数(输出)': '1', '运行状态(输出)': '成功99', '数量(输出)': '3', '价格(输出)': '400.00',
+                '集换价(输出)': '410.00', '最低价(输出)': '380.00', '备注(输出)': '78品', '输入框编号(输出)': 'PHNI-JP001' } },
+      { code: 'PHNI-JP001', rarity: 'QCSER', ext: '90829280', jp: 'スピリット・オブ・ユベル',    cn: '尤贝尔之精灵',     cond: '流通品相', note: '',     alt: '', ai: 0, old: 0, add: 1, flow: 'A', st: 'red',  err: '报错A03-数量',
+        outs: { '编号(输出)': 'PHNI-JP001', '罕贵度(输出)': 'QCSER', '中文卡名(输出)': '尤贝尔之精灵', '中文别名(输出)': '', '语种(输出)': '日文',
+                '游戏版本(输出)': '游戏王日文', '行数(输出)': '0', '运行状态(输出)': '失败：数量不匹配', '数量(输出)': '', '价格(输出)': '',
+                '集换价(输出)': '', '最低价(输出)': '', '备注(输出)': '', '输入框编号(输出)': '' } },
+      { code: 'PHNI-JP002', rarity: 'N',     ext: '26913989', jp: 'ガイストーチ・ゴーレム',      cn: '幽魂拷问魔像',     cond: '流通品相', note: '78品', alt: '', ai: 0, old: 5, add: 2, flow: 'C', st: 'manual' },
+    ],
+  },
+  {
+    pack: 'ALIN', order: 2, state: 'frozen', total: 1295,
+    items: [
+      { code: 'ALIN-JP001', rarity: 'R',  ext: '3723262',  jp: 'ウィザード＠イグニスター', cn: '男巫＠伊格尼斯者',   cond: '流通品相', note: '', alt: '', ai: 0, old: 4, add: 3, flow: 'A', st: 'gray' },
+      { code: 'ALIN-JP002', rarity: 'SR', ext: '30118811', jp: 'バックアップ＠イグニスター', cn: '备援＠伊格尼斯者', cond: '流通品相', note: '', alt: '', ai: 0, old: 0, add: 2, flow: 'A', st: 'gray' },
+    ],
+  },
+  {
+    pack: 'BPRO', order: 3, state: 'frozen', total: 1270,
+    items: [
+      { code: 'BPRO-JP001', rarity: 'SR', ext: '25554552', jp: 'ヴァレット・ローダー',      cn: '枪弹装填者', cond: '流通品相', note: '',     alt: '', ai: 0, old: 0, add: 1, flow: 'A', st: 'gray' },
+      { code: 'BPRO-JP002', rarity: 'N',  ext: '51548207', jp: 'ホロウヴァレット・ドラゴン', cn: '空尖枪弹龙', cond: '流通品相', note: '78品', alt: '', ai: 0, old: 7, add: 1, flow: 'A', st: 'gray' },
+    ],
+  },
+  {
+    pack: 'TTP1', order: 4, state: 'blocked', total: 745,
+    blocked: ['TTP1-JP006'],
+    items: [
+      { code: 'TTP1-JP002', rarity: 'UR', ext: '85899505', jp: '合体魔竜ティマイオス', cn: '合体魔龙 提玛欧斯', cond: '流通品相', note: '', alt: '', ai: 0, old: 0, add: 1, flow: 'A', st: 'gray' },
+      // `登记` = 这一行的编号有没有进「信息登记」清单（真页面 = cardmarks 表里有没有
+      // (编号, 罕贵度) 这一条）。这儿故意留成 false，好让蓝块「信息登记」看得见、点得动 ——
+      // 实际上大部分缺目录编号进来时**已经是绿的**（新卡/改编号那条写路径会自动记一条通配）。
+      { code: 'TTP1-JP006', rarity: 'N',  ext: '',         jp: '',                    cn: '',                 cond: '流通品相', note: '', alt: '', ai: 0, old: 0, add: 2, flow: 'A', st: 'gray', miss: true, 登记: false },
+    ],
+  },
+  {
+    pack: 'INFO', order: 5, state: 'frozen', total: 760,
+    items: [
+      { code: 'INFO-JP001', rarity: 'SR', ext: '38775407', jp: '千年の眠りから覚めし原人', cn: '觉醒于仟年长眠中的原人', cond: '流通品相', note: '', alt: '', ai: 0, old: 1, add: 1, flow: 'A', st: 'gray' },
+    ],
+  },
+  // 异画演示包：这三张是从 cardcatalogs 里挑的**真有异画、且 altLabel 已经填过字**的。
+  // 真库现状：hasAltArt 的行有 306 条，其中 302 条的 altLabel 还是占位符「待填」。
+  {
+    pack: 'QCAC', order: 6, state: 'frozen', total: 402,
+    items: [
+      { code: 'QCAC-JP009', rarity: 'SER', ext: '8491308', jp: '閃刀姫－ハヤテ', cn: '闪刀姬－飒',   cond: '流通品相', note: '', alt: '初版', ai: 0, old: 1, add: 1, flow: 'B', st: 'gray' },
+      { code: 'QCAC-JP009', rarity: 'SER', ext: '8491308', jp: '閃刀姫－ハヤテ', cn: '闪刀姬－飒',   cond: '流通品相', note: '', alt: '异画', ai: 1, old: 0, add: 1, flow: 'B', st: 'gray' },
+      { code: 'QCAC-JP045', rarity: 'SER', ext: '4376658', jp: '憑依装着－ヒータ', cn: '凭依装着－希塔', cond: '流通品相', note: '78品', alt: '初版', ai: 0, old: 2, add: 1, flow: 'B', st: 'gray' },
+      { code: 'QCAC-JP045', rarity: 'SER', ext: '4376658', jp: '憑依装着－ヒータ', cn: '凭依装着－希塔', cond: '流通品相', note: '', alt: '异画', ai: 1, old: 3, add: 1, flow: 'B', st: 'gray' },
+    ],
+  },
+  {
+    pack: 'QCLP', order: 7, state: 'frozen', total: 88,
+    items: [
+      { code: 'QCLP-JP009', rarity: 'UR', ext: '12493482', jp: 'デュナミス・ヴァルキリア', cn: '美德女武神', cond: '流通品相', note: '', alt: '待填', ai: 0, old: 1, add: 1, flow: 'B', st: 'gray' },
+    ],
+  },
+]
+
+// ===== 三步走的三段数据 =====
+//   ① `包`        —— 待上架包（子页签一）。还没点「确认完成」的。能勾、能跑、能改。
+//   ② `待归档包`  —— 已上架包（子页签二）。**本批**点过「确认完成」的：包内 0 灰 0 红，
+//                    人核对过了。只读（要改先「放回」）。开局是**空的**。
+//   ③ `已归档包`  —— 已上架库（顶栏第四枚）。整批归档过的，**按库位**分。
+//                    开局就有两个：用户原始数据里本来就有已上架的包（LEDE / DUAD）。
+//
+// ⚠️ ②③ 拆成两个数组是这一版的关键改动。上一版把两者混在一个 `已上架包` 里，
+//    「已上架包」和「已上架库」就成了**同一批卡的两个切法**，不是前后两站。
+//    用户定的三步走要求它们是相邻两站，所以必须分开存：
+//    「确认完成」只搬进 ②，那一屏整屏一枚「整批归档」才搬进 ③。
+//    —— 真代码里对应的是：②＝ListingBatch.donePacks，③＝state:'listed' 的批次。
+//
+// ②③ 的包**必须带着 `items`** —— 只存个「922 张」的话，点进去是一间空屋子。
+// 下面这些编号/罕贵/卡密都是从真目录里取的，卡图能真出来。
+// ⚠️ 每个包里放的是**几行样子**，真跑起来是几百行（总数看头部的 total）。
+// 状态只有两种：green（成功）/ red（失败）—— 不会有灰的：灰的或红的都不让确认完成。
+let 待归档包 = []
+
+let 已归档包 = [
+  { pack: 'LEDE', order: 1, total: 922, done: '2026-10-02 11:20', ok: 920, bad: 2, items: [
+    { code: 'LEDE-JP001', rarity: 'UR', ext: '2333466',  jp: '破壊竜ガンドラG',            cn: '破坏龙 钢多拉G',   cond: '流通品相', note: '',     alt: '', ai: 0, old: 3, add: 1, flow: 'A', st: 'green', jhj: '58.00', low: '45.00' },
+    { code: 'LEDE-JP002', rarity: 'N',  ext: '39321065', jp: 'サイレント・ソードマン・ゼロ', cn: '沉默剑士・零',     cond: '流通品相', note: '78品', alt: '', ai: 0, old: 5, add: 2, flow: 'A', st: 'green', jhj: '12.00', low: '9.00' },
+    { code: 'LEDE-JP003', rarity: 'SR', ext: '65726770', jp: 'サイレント・マジシャン・ゼロ', cn: '沉默魔术师・零',   cond: '流通品相', note: '',     alt: '', ai: 0, old: 0, add: 1, flow: 'A', st: 'red',   err: '报错A03-数量' },
+    { code: 'LEDE-JP004', rarity: 'R',  ext: '92110878', jp: 'トリコロール・ガジェット',     cn: '三色小工具',       cond: '轻微瑕疵', note: '',     alt: '', ai: 0, old: 2, add: 1, flow: 'B', st: 'green', jhj: '6.00',  low: '4.50' },
+  ] },
+  { pack: 'DUAD', order: 2, total: 713, done: '2026-10-01 19:05', ok: 713, bad: 0, items: [
+    { code: 'DUAD-JP001', rarity: 'R',  ext: '62006866', jp: 'ズバババナイト',        cn: '刷拉拉拉骑士',       cond: '流通品相', note: '',     alt: '', ai: 0, old: 2, add: 1, flow: 'A', st: 'green', jhj: '3.00', low: '2.00' },
+    { code: 'DUAD-JP002', rarity: 'N',  ext: '9491461',  jp: 'ガガガガンバラナイト',   cn: '我我我加把劲骑士',   cond: '流通品相', note: '78品', alt: '', ai: 0, old: 0, add: 2, flow: 'B', st: 'green', jhj: '2.50', low: '1.80' },
+    { code: 'DUAD-JP003', rarity: 'N',  ext: '35886170', jp: 'ゴゴゴゴブリンドバーグ', cn: '隆隆隆格布林德伯格', cond: '流通品相', note: '',     alt: '', ai: 0, old: 4, add: 1, flow: 'C', st: 'green', jhj: '8.00', low: '6.00' },
+  ] },
+]
+
+// 给每一行发一个**自己的**实体卡序号 —— 见 `实体卡()` 上头那段说明。
+// 必须等 包 和 已归档包 都声明完才能跑（`let` 有 TDZ，提前摸会直接 ReferenceError）。
+{
+  let n = 0
+  const 发号 = (p) => { for (const i of (p.items || [])) if (!一张卡的号.has(i)) 一张卡的号.set(i, ++n) }
+  for (const p of 包) 发号(p)
+  for (const p of 已归档包) 发号(p)
+}
+重排卡位()   // 开局那两个包（LEDE / DUAD）本来就是归档过的，号按库位连着排
+
+// 留档 · 行情：一行 = 一张卡。真实现里这张表只进不删，
+// 每跑完一张就写一条（不是等包完成才写）—— 断电才丢不了。
+let 留档 = [
+  { pack: 'DUAD', code: 'DUAD-JP001', name: '青眼白龙',   rarity: 'SR', cond: '流通品相', note: '',     alt: '', old: 3, add: 1, jhj: '96.00',  low: '88.00', ok: true,  t: '10-01 19:05' },
+  { pack: 'LEDE', code: 'LEDE-JP018', name: '真红眼黑龙', rarity: 'R',  cond: '流通品相', note: '78品', alt: '', old: 6, add: 2, jhj: '41.00',  low: '35.00', ok: true,  t: '10-02 11:20' },
+  { pack: 'LEDE', code: 'LEDE-JP044', name: '黑魔导',     rarity: 'UR', cond: '轻微瑕疵', note: '9品',  alt: '', old: 0, add: 1, jhj: '',       low: '',      ok: false, t: '10-02 11:20' },
+]
+
+let 当前包 = null
+let 选中行 = null       // 自动上架的起点（格式 'code|rarity'）
+// 正在跑的模拟。**语义是"包内游标"** —— 它只管一个包里的那一队列。
+// v3 加了三格（`试` / `卡状态` / `批`），但**没有**把跨包的队列塞进来：
+// 它被 打开包()、切块()、急停() 三处按"跑一个包"的语义清理，塞进来会各清一半。
+//   试     —— 当前这张卡跑到第几遍（1 / 2）。重试就是把它 +1 再跑一次。
+//   卡状态 —— 直接喂给 渲染当前卡框()：running / retrying / success / failed
+//   批     —— 指向下面的 批跑（列表发起时有值，详情里单跑一个包时是 null）。
+//             跑收尾() 靠它决定是"接着下一个包"还是"这一趟到这儿就完了"。
+let 跑中 = null
+
+// ① 包多选 + 依次跑。**跨包编排单独一层**，跟 跑中 那个包内游标分开。
+let 选中包 = new Set()   // 勾了的包名
+let 批跑 = null          // { 名单:[包名...], 第几:0 }；null = 没有整批在跑
+let 演示失败 = true      // 演示开关，默认开：保证「重试→跳过→标红」一定看得到
+
+// ============================================================
+// 包列表
+// ============================================================
+function 渲染包列表() {
+  const box = document.getElementById('pkgList')
+  // 整屏那枚「整批归档」在**已上架包**那一屏（第②站），可能否定亮看的却是
+  // `包` 和 `待归档包` —— 两个都长在这一屏隔壁。所以每回重画包列表都顺手刷一遍它，
+  // 别让它停在上一次的状态上（跑完最后一个包时"待上架包已空"这件事就发生在这里）。
+  刷新整批按钮()
+  // 全部上架完之后 包 是空的 —— 不能就留一片白。
+  // 这块空态要回答的是"接下来该干嘛"：卡都在哪、下一步点哪儿。
+  if (!包.length) {
+    box.innerHTML = `<div class="empty" style="padding:28px 20px;line-height:1.9">
+      待上架包已经空了。<br>
+      这 ${待归档包.length} 个包、<b>${待归档包.reduce((a, p) => a + p.total, 0).toLocaleString()}</b> 张卡
+      都在<b>「已上架包」</b>里等着归档 —— 切到那一屏核对，没问题就按整屏那枚<b>「整批归档」</b>。<br>
+      要上架新的库，点上面那枚红色的<b>「开始解析」</b>起新的一批。
+    </div>`
+    刷新统计()
+    // 包没了，勾选集合必然是空的 —— 也要刷一次，不然「已选 N 个包」会停在上一次的数上。
+    渲染勾选条()
+    return
+  }
+  // 勾着的包可能已经被「确认完成」搬走了（包数组里没了）—— 重画前先把它剔掉，
+  // 不然「已选 N 个包」会虚高，最后那一下永远点不下去。
+  const 在册 = new Set(包.map(p => p.pack))
+  ;[...选中包].forEach(x => { if (!在册.has(x)) 选中包.delete(x) })
+
+  box.innerHTML = 包.map(p => {
+    const cnt = { A: 0, B: 0, C: 0 }
+    p.items.forEach(i => cnt[i.flow]++)
+    const done = p.items.filter(i => i.st === 'green' || i.st === 'manual').length
+    const pct = p.items.length ? Math.round(done / p.items.length * 100) : 0
+    const cls = p.state === 'blocked' ? 'blocked' : 'frozen'
+    const warn = p.blocked ? `<span class="chip warn">⚠ ${p.blocked.length} 个编号缺目录</span>` : ''
+    // ② 这个包里有几张是「重试过仍失败、已跳过」的。红点 + 红 chip 一起出，
+    //    跑完整批回头找是哪个包出的问题就靠它。
+    //    刻意**不用**左边那条竖条（.pkg.frozen/.blocked）—— 那条是"包的状态"，
+    //    失败是"跑的结果"，两回事，混用之后一眼分不出这个包到底是缺目录还是跑挂了。
+    const 失败数 = p.items.filter(i => i.st === 'red').length
+    const 坏标 = 失败数
+      ? `<span class="chip bad">失败 ${失败数}</span>`
+      : ''
+    const 红点 = 失败数 ? `<i class="pkg-dot" title="这个包有 ${失败数} 张失败"></i>` : ''
+    // 「确认完成」的前置条件（用户定的）：**0 灰 0 红**才给点。
+    // 灰 = 没跑完；红 = 跑挂了、还没人工处理掉。判据只有 可确认() 一处 ——
+    // 这里只是照着它画按钮，别在这儿再写一份，两处迟早走散。
+    const 没跑 = p.items.filter(i => i.st === 'gray').length
+    const 可完成 = 可确认(p)
+    // 状态字：三种拦路的理由**能同时成立**（又有灰又有红），所以不能三选一 ——
+    // 只报"剩 2 张"会把那一张红的藏起来，人跑完灰卡才发现还是过不去，白跑一趟。
+    const 状态字们 = []
+    if (p.state === 'blocked') 状态字们.push('不可上架')
+    if (没跑) 状态字们.push(`剩 ${没跑} 张`)
+    if (失败数) 状态字们.push(`${失败数} 张失败`)
+    const stateText = 状态字们.length ? 状态字们.join(' · ') : '可确认完成'
+    // 按不动的原因：同样把**所有**理由一次说全，别让人试两次才凑齐。
+    const 拦着 = []
+    if (p.state === 'blocked') 拦着.push('有编号不在卡牌目录，整包不可上架（包详情里有出口：改编号 / 删掉这一行）')
+    if (没跑) 拦着.push(`还有 ${没跑} 张没跑（灰点），跑完才能确认完成`)
+    if (失败数) 拦着.push(`还有 ${失败数} 张失败（红底）—— 点进包详情，用「重跑这一行 / 标记已上架 / 删掉这一行」处理掉`)
+    const 禁用提示 = 可完成 ? '' : `title="${拦着.join('；')}"`
+    // ① 勾选状态。跑动中整排不能改勾选（但保留已勾的显示）——
+    //    名单是在起跑那一刻抄下来的，跑一半改勾选只会让人以为改了名单。
+    const 勾了 = 选中包.has(p.pack)
+    const 能勾 = !批跑 && p.state !== 'blocked'
+    return `
+      <div class="pkg ${cls}${勾了 ? ' checked' : ''}" data-pack="${p.pack}">
+        <div class="pkg-main">
+          <div class="pkg-bar">
+            <span class="handle" data-handle>⋮⋮</span>
+            <span class="bar"><i style="width:${pct}%"></i></span>
+          </div>
+          <div class="row2">
+            <span class="name">${p.pack}</span>
+            ${红点}
+            <span class="qty">${p.total.toLocaleString()} 张</span>
+            <span class="spacer"></span>
+            <span class="state">${stateText}</span>
+          </div>
+          <div class="flows">
+            <span class="chip a">流程A ${cnt.A}</span>
+            <span class="chip b">流程B ${cnt.B}</span>
+            <span class="chip c">流程C ${cnt.C}</span>
+            ${坏标}
+            ${warn}
+          </div>
+        </div>
+        <button class="pkg-sel ${勾了 ? 'on' : ''}" data-check="${p.pack}" ${能勾 ? '' : 'disabled'}
+                title="${p.state === 'blocked' ? '整包不可上架，勾不了' : (批跑 ? '正在跑，要改名单先按「终止」' : (勾了 ? '点一下取消勾选' : '点一下勾上，勾几个就按顺序跑几个'))}">
+          <span class="st">${勾了 ? '✓ 已选' : '勾选'}</span>
+        </button>
+        <button class="pkg-finish ${可完成 ? 'ok' : ''}" data-finish="${p.pack}" ${可完成 ? '' : 'disabled'} ${禁用提示}>
+          <span class="ft">确认完成</span>
+        </button>
+      </div>`
+  }).join('')
+
+  box.querySelectorAll('.pkg').forEach(el => {
+    el.addEventListener('click', e => {
+      if (刚拖过) { 刚拖过 = false; return }
+      // ① 勾选条是包卡片**里面**的一枚按钮，而整块卡片是"点开进详情"。
+      //    不加这道守卫，点勾选会顺手把自己送进详情页 —— 这是这个交互最容易踩的坑。
+      //    守卫只写这一处：勾选条自己**不**另挂 click（挂了就得再想一遍冒泡顺序，
+      //    而这一个 closest 已经把所有落点都兜住了 —— 点到条上、点到字上，都算）。
+      //    即使按钮是 disabled（跑动中 / 整包不可上架），掉进来的也是这里 ——
+      //    切换包勾选() 自己会给出对应的话，比让按钮静默无反应好。
+      const 勾 = e.target.closest('[data-check]')
+      if (勾) { 切换包勾选(勾.dataset.check); return }
+      // 用 closest：右边那块按钮里还套了个 <span>，点到字上时 e.target 是那个 span
+      const 完成钮 = e.target.closest('[data-finish]')
+      if (完成钮) { 确认完成(完成钮.dataset.finish); return }
+      if (e.target.closest('[data-handle]')) return
+      打开包(el.dataset.pack)
+    })
+    el.querySelector('[data-handle]').addEventListener('pointerdown', e => 开始拖(e, el))
+  })
+  刷新统计()
+  渲染勾选条()
+}
+
+// ============================================================
+// ① 包的多选（勾选条 + 包卡片左端那枚框）
+// ============================================================
+// 唯一的数据源是上面的 `选中包`。所有重画都走 渲染包列表()（它末尾会顺手刷勾选条），
+// 所以这里只改数据再调一次重画 —— 别在这儿另写一套 DOM 操作，两处迟早走散。
+function 切换包勾选(pack) {
+  if (批跑) { 冒一句('整批正在跑，要改名单先按「终止」。'); return }
+  const p = 包.find(x => x.pack === pack)
+  if (!p) return
+  if (p.state === 'blocked') { 冒一句(`「${pack}」有编号不在卡牌目录，整包不可上架，勾不了。`); return }
+  if (选中包.has(pack)) 选中包.delete(pack)
+  else 选中包.add(pack)
+  渲染包列表()
+}
+
+function 设全选(on) {
+  if (批跑) { 冒一句('整批正在跑，要改名单先按「终止」。'); return }
+  if (on) 包.forEach(p => { if (p.state !== 'blocked') 选中包.add(p.pack) })
+  else 选中包.clear()
+  渲染包列表()
+}
+
+// 勾选条上所有会变的东西都从这儿改。跑动中：按钮变「■ 终止」、全选变灰，
+// 但「已选 N 个包」照旧 —— 那是"这一趟要跑哪几个"，正跑着更应该看得见。
+function 渲染勾选条() {
+  const 可勾 = 包.filter(p => p.state !== 'blocked')
+  const 全 = 可勾.length > 0 && 可勾.every(p => 选中包.has(p.pack))
+  document.getElementById('selCount').textContent = 选中包.size
+  document.getElementById('selTotal').textContent = 可勾.length
+  document.getElementById('selAllBox').classList.toggle('checked', 全)
+  document.getElementById('selAll').style.opacity = 批跑 ? .45 : 1
+  const b = document.getElementById('btnBatchRun')
+  b.disabled = 批跑 ? false : 选中包.size === 0
+  b.textContent = 批跑 ? '■ 终止' : '▶ 开始上架'
+  b.classList.toggle('running', !!批跑)
+}
+
+// 批次号：真实现是 queues.js:11 的 generateBatchId()，格式 `${yy}-${m}-${d}-${当天第几批}`
+//（今天 2026-10-02 → '26-10-2-1'）。解析成功就落一个，**只有撤回会清掉它**。
+// 原型这边这 7 个待上架包就是这一批解析出来的，所以固定给一个。
+let 批次号 = '26-10-2-1'
+// 这一批解析出来的规模。包一旦被「确认完成」搬走，`包` 就空了，
+// 可界面还得说得出"这一批一共多少" —— 所以在开局先记一份快照。
+// （真实现里这两个数按 batchId 查 ListingQueue 数得出来，不用记。）
+const 本批包数 = 包.length
+const 本批卡数 = 包.reduce((a, p) => a + p.total, 0)
+
+function 刷新统计() {
+  const 卡数 = 包.reduce((a, p) => a + p.total, 0)
+  const 空 = 包.length === 0
+  // 状态字：真页面三档（灰=待解析 / 橙=解析中 / 红=已完成）。原型里这些包已经解析过了，
+  // 所以停在红色那档；全上架完就换文案。
+  const 标 = document.getElementById('pStatus')
+  标.textContent = 空 ? '全部已上架' : '已解析'
+  标.className = 'parse-status'
+  // 批次号在**全部上架完之后仍然留着**：真库里那批 StockCode 还挂着 listingBatchId
+  // （auto-execute-vm.js 归档时只改 status/libraryType，没清它），唯一能清掉的是「撤回」。
+  // 界面上跟着抹掉，会让人以为"这一批已经结清了、没什么可撤的"。
+  document.getElementById('pBatch').textContent = 批次号 ? '批次：' + 批次号 : '批次：暂无'
+  document.getElementById('pBar').innerHTML = 空
+    ? `这一批 <b>${本批包数}</b> 个包 · <b>${本批卡数.toLocaleString()}</b> 张卡 · 已全部上架`
+    : `待上架 <b>${包.length}</b> 个包 · <b>${卡数.toLocaleString()}</b> 张卡 · 游戏王日文`
+  // 同上：没包了就把"怎么拖顺序 / 怎么看底色"那两块也收起来。
+  document.getElementById('pkgHint').style.display = 空 ? 'none' : ''
+  document.getElementById('pkgLegend').style.display = 空 ? 'none' : ''
+}
+
+/* ---------- 指针拖动排序（鼠标 / 触屏通用，不依赖 HTML5 DnD） ---------- */
+let 拖动中 = null
+let 刚拖过 = false
+function 开始拖(e, el) {
+  e.preventDefault()
+  拖动中 = { el, 起点: e.clientY }
+  刚拖过 = false
+  el.classList.add('dragging')
+  document.addEventListener('pointermove', 拖中)
+  document.addEventListener('pointerup', 拖完)
+  document.addEventListener('pointercancel', 拖完)
+}
+function 拖中(e) {
+  if (!拖动中) return
+  if (Math.abs(e.clientY - 拖动中.起点) > 5) 刚拖过 = true
+  const box = document.getElementById('pkgList')
+  const after = 取插入目标(box, e.clientY)
+  if (after == null) box.appendChild(拖动中.el)
+  else box.insertBefore(拖动中.el, after)
+}
+function 拖完() {
+  if (!拖动中) return
+  拖动中.el.classList.remove('dragging')
+  document.removeEventListener('pointermove', 拖中)
+  document.removeEventListener('pointerup', 拖完)
+  document.removeEventListener('pointercancel', 拖完)
+  拖动中 = null
+  const order = [...document.querySelectorAll('#pkgList .pkg')].map(el => el.dataset.pack)
+  包.sort((a, b) => order.indexOf(a.pack) - order.indexOf(b.pack))
+  包.forEach((p, i) => p.order = i + 1)
+  存顺序()
+}
+// 包顺序持久化：真实现里存数据库的一个 order 字段，自动上架按它走；
+// 原型先存 localStorage，关掉页面再打开顺序还在 —— 你可以直接验「排了不会白排」。
+function 存顺序() {
+  try { localStorage.setItem('slan-pkg-order', JSON.stringify(包.map(p => p.pack))) } catch (_) {}
+}
+function 读顺序() {
+  try {
+    const s = JSON.parse(localStorage.getItem('slan-pkg-order') || '[]')
+    if (!s.length) return
+    const 位 = x => (s.indexOf(x) < 0 ? 999 : s.indexOf(x))
+    包.sort((a, b) => 位(a.pack) - 位(b.pack))
+  } catch (_) {}
+}
+function 取插入目标(box, y) {
+  const els = [...box.querySelectorAll('.pkg:not(.dragging)')]
+  return els.find(el => {
+    const r = el.getBoundingClientRect()
+    return y < r.top + r.height / 2
+  }) || null
+}
+
+/* ---------- 搬一个包：待上架包（第①站）→ 已上架包（第②站）----------
+   只搬数据、**不弹窗也不重画**。因为有两个调用方，弹窗和重画的时机不一样：
+     · 包卡片上那枚「确认完成」——一个包一次确认、一次提示、一次重画；
+     · 「放回」——往回走，走的是 放回()，不经过这里（它只把包名摘回去，别的字段一个字不动）。
+   把弹窗塞进这里的话，两个调用方会各弹一次不该弹的。
+   返回 { 成功, 失败 }，调用方拿去写自己的提示。 */
+function 搬包(name) {
+  const p = 包.find(x => x.pack === name)
+  if (!p) return null
+  const 成功 = p.items.filter(i => i.st === 'green' || i.st === 'manual').length
+  const 失败 = p.items.filter(i => i.st === 'red').length
+  // 追溯存档：真实现里**每跑完一张就写一条**（不等包完成，断电才丢不了），
+  // 这里为了演示完整，在搬包时把这一个包整批补进去。
+  留档 = p.items.map(i => ({
+    pack: p.pack, code: i.code, name: i.cn || i.jp || '', rarity: i.rarity,
+    cond: i.cond, note: i.note, alt: i.alt,
+    old: i.old, add: i.add, jhj: i.jhj || '', low: i.low || '',
+    ok: (i.st === 'green' || i.st === 'manual'), t: '刚完成',
+  })).concat(留档)
+
+  // 三步走的第二站：进「已上架包」（子页签二）**等整批归档**，不是直接进已上架库。
+  待归档包.unshift({
+    pack: p.pack,
+    total: p.total,
+    // ★ 必须把卡一起带过去：只搬「922 张」这个数字的话，这个包搬完就点不开了
+    //   —— 点进去是一间空屋子（这一屏可点，会真的打开详情）。
+    items: p.items,
+    done: '刚完成',
+    ok: 成功,
+    bad: 失败,
+  })
+  包 = 包.filter(x => x.pack !== name)
+  存顺序()
+  return { 成功, 失败 }
+}
+
+/* ---------- 包卡片上那枚「确认完成」：待上架包 → 已上架包（子页签二）----------
+   三步走的第二站。门槛是用户定的：**包内 0 灰 0 红**才给过。
+     · 灰 = 还没跑完 —— 跑完再说；
+     · 红 = 跑挂了 —— 必须先在包详情里用「重跑这一行 / 标记已上架 / 删掉这一行」处理掉。
+   两种都清了，这枚才点亮。所以能进 待归档包 的包**一定**是干净的，
+   后面「整批归档」就可以无条件、无例外地整批搬 —— 不像上一版还得逐个绕开 blocked 的包。
+   ⚠️ 真代码原来是"失败放行"（auto-listing.vue:1385 那个 `包可确认`），
+      这一版按新口径收紧，两边要一起改；否则前端点亮了后端还按老口径放行，验收对不上。 */
+function 可确认(p) {
+  return !!p && p.state !== 'blocked' && p.items.length > 0
+    && !p.items.some(i => i.st === 'gray' || i.st === 'red')
+}
+
+function 确认完成(name) {
+  const p = 包.find(x => x.pack === name)
+  if (!p) return
+  if (!可确认(p)) {
+    const 灰 = p.items.filter(i => i.st === 'gray').length
+    const 红 = p.items.filter(i => i.st === 'red').length
+    提示(`「${p.pack}」还不能确认完成：`
+      + (p.state === 'blocked' ? '\n· 有编号在卡牌目录里查不到，整包不可上架（包详情里那两条出口：改编号 / 删掉这一行）' : '')
+      + (灰 ? `\n· 还剩 ${灰} 张没跑完（灰点）` : '')
+      + (红 ? `\n· 还有 ${红} 张失败（红底）—— 点进包详情，用「重跑这一行 / 标记已上架 / 删掉这一行」处理掉` : ''))
+    return
+  }
+  const 成功 = p.items.filter(i => i.st === 'green' || i.st === 'manual').length
+  const 人工 = p.items.filter(i => i.st === 'manual').length
+  if (!confirm(`确认「${p.pack}」上架完成？\n\n成功 ${成功} 张`
+    + (人工 ? `（其中 ${人工} 张是你手工标的已上架）` : '')
+    + `\n\n确认后它移进「已上架包」，在那儿等整批归档 —— 还没进库。`
+    + `\n再想改这个包，就在那一屏点它的「放回」。`)) return
+  搬包(name)
+  渲染包列表()
+  渲染已上架()
+  渲染留档()
+  alert(`「${p.pack}」已移入「已上架包」（待归档）`
+    // 全部确认完的那一刻说清楚下一步 —— 这是这一屏唯一会"变空"的时刻，
+    // 不说的话人只会看见包列表没了。
+    + (包.length === 0
+        ? `\n\n待上架包空了 —— ${待归档包.length} 个包都在「已上架包」里。\n`
+          + `核对无误就切到那一屏，点整屏那枚「整批归档」进「已上架库」。\n`
+          + `批次 ${批次号} 还挂着（要退掉点「撤回」）；上新的库就点「开始解析」。`
+        : ''))
+}
+
+/* ---------- 整批归档（整屏一枚，挂在「已上架包」那一屏）----------
+   三步走的第三站：`待归档包` → `已归档包`（＝顶栏「已上架库」）。
+   用户定的形态：**整屏一枚**，一按把这一批全搬走，不逐包挑。
+   点亮判据：
+     · 待上架包必须空了 —— 还有包留在第一步，就说明这批没走完，不能归档；
+     · 待归档包得有东西 —— 空的没什么可搬。
+   ⚠️ 跟上一版的分工不同：上一版这枚挂在同一屏、搬的却是**待上架包**，
+      还得逐个绕开 blocked 的包。这一版门槛提前到了「确认完成」，
+      能进 待归档包 的一定是 0 灰 0 红 的干净包，所以归档这一下是**整批、无例外**。 */
+function 整批可归档() {
+  return 待归档包.length > 0 && 包.length === 0
+}
+
+// 按不动的原因，一句话说出来 —— 光变灰不说为什么，人只会一遍遍点它。
+function 归档按钮说明() {
+  if (!待归档包.length) {
+    if (!包.length) return '这一批已经全部归档进「已上架库」了 —— 去那一屏按库位核对实物。'
+    return '「已上架包」还是空的 —— 先在「待上架包」把包一个个点「确认完成」。'
+  }
+  const 卡住 = 包.filter(p => p.state === 'blocked')
+  const 没完 = 包.filter(p => p.state !== 'blocked')
+  return `还有 ${包.length} 个包留在「待上架包」，不能归档：`
+    + (没完.length ? `\n· ${没完.map(p => p.pack).join('、')} 还没点「确认完成」` : '')
+    + (卡住.length ? `\n· ${卡住.map(p => p.pack).join('、')} 有编号在卡牌目录里查不到` : '')
+}
+
+function 刷新整批按钮() {
+  const b = document.getElementById('btnFinishAll')
+  if (!b) return
+  const 能 = 整批可归档()
+  b.classList.toggle('on', 能)
+  b.disabled = !能
+  b.textContent = 能
+    ? `整批归档 · ${待归档包.length} 个包 / ${待归档包.reduce((a, p) => a + p.total, 0).toLocaleString()} 张卡`
+    : '整批归档'
+  b.title = 能 ? '把「已上架包」里这些包整批归档进「已上架库」' : 归档按钮说明()
+  // 按不动的原因直接写在按钮下面 —— 只挂 title 的话手机上根本看不到。
+  const note = document.getElementById('finishAllNote')
+  if (note) note.textContent = 能
+    ? `归档后：库封存、卡位重排成连续编号、原图链接清空。要走完这一步才算真上架。`
+    : 归档按钮说明()
+}
+
+document.getElementById('btnFinishAll').onclick = () => {
+  if (!整批可归档()) { 提示(归档按钮说明()); return }
+  const 卡数 = 待归档包.reduce((a, p) => a + p.total, 0)
+  const 库位 = new Set()
+  for (const p of 待归档包) for (const it of p.items) for (const k of 实体卡(it)) 库位.add(k.lib)
+  // 这批要落的库里，哪些**本来就有卡**？那些库里老卡的卡位号会被一起重排 ——
+  // 真代码 compactLibrarySerials(lib) 是**整个库**读出来按老号排序再从头编 0001..N 的
+  // （services/librarySerials.js:57-77），不是只重排新进来的那批。这是有代价的，得先说清。
+  const 老库位 = new Set()
+  for (const p of 已归档包) for (const it of (p.items || [])) for (const k of 实体卡(it)) if (库位.has(k.lib)) 老库位.add(k.lib)
+  if (!confirm(`把这 ${待归档包.length} 个包、${卡数.toLocaleString()} 张卡整批归档进「已上架库」？\n\n`
+    + `库封存、原图链接清空、库内卡位重排成连续编号。\n`
+    + `这批会摊到 ${库位.size} 个库位上 —— 归档后在顶栏第四枚「已上架库」按库位核对实物。\n`
+    + (老库位.size ? `\n⚠ 其中 ${老库位.size} 个库位（${[...老库位].sort().join('、')}）本来就有卡，`
+      + `重排是**整库重排** —— 那些老卡的卡位号会跟着往后挪（册还在、号会变）。\n` : '')
+    + `归档后这批就从「已上架包」里出去了，要退只能整批撤回。`)) return
+  const 名单 = 待归档包.map(p => p.pack)
+  已归档包 = 待归档包.concat(已归档包)
+  待归档包 = []
+  重排卡位()          // 见上面 重排卡位() 的说明：整库重排成 0001..N
+  渲染已上架()
+  渲染库屏()
+  alert(`${名单.length} 个包已归档进「已上架库」`
+    + `\n在顶栏第四枚「已上架库」里，按库位（A0-000-XX）核对实物 —— 一个库位里会混着好几个包的卡。`)
+}
+
+/* ---------- 「放回」：已上架包（待归档）→ 待上架包 ----------
+   三步走里唯一一条**往回**的路。真代码对应 batches.js:339-359 那个 undo：
+   只把包名从 donePacks 里摘掉，库状态/卡位号/库锁一个字都不动 —— 所以它随时能用、没有负担。
+   ⚠️ 归档之后再想退就**不是**这条路了（那时已经真动库了），只能整批「撤回」。 */
+function 放回(name) {
+  const i = 待归档包.findIndex(p => p.pack === name)
+  if (i < 0) return
+  const p = 待归档包[i]
+  if (!confirm(`把「${name}」放回「待上架包」？\n\n`
+    + `它只是从「已上架包」挪回去，库、卡位号、库锁都不动，随时能再确认完成一次。`)) return
+  待归档包.splice(i, 1)
+  // 它在这一轮写进去的追溯存档也要一起撤回 —— 不撤的话再确认完成一次，
+  // 留档里同一个包会出现两遍（真实现里留档是只进不删的，所以这纯粹是原型为了演示清爽）。
+  留档 = 留档.filter(r => !(r.pack === name && r.t === '刚完成'))
+  p.order = 包.length + 1
+  包.push(p)
+  存顺序()
+  渲染包列表()
+  渲染已上架()
+  渲染留档()
+  冒一句(`「${name}」已放回待上架包`)
+}
+
+/* ---------- 缺目录的出口 ----------
+   原型专用的一点：这里全都能**真把状态改回来**，因为真页面上这几条路也都是
+   点完就自动放行（前端重算 `未找到` 那一份）。哪条是演的、哪条是真的，写在各自分支里。
+
+   ⚠️ 这一版**只剩两条「就地解决」的出口**（改编号 / 删行）。
+      原来的第三条「补进卡牌目录」已经**撤掉**了 —— 用户 2026-10-04 定的：
+      不做那种替人把目录写了的按钮（那是写真图源 tcg-data，V1.1），
+      改成识别上传页那个蓝块/绿块「信息登记 ⇄ 信息已登记」：**点一下只记一笔**，
+      改目录是用户自己到「卡牌资料库 ▸ 卡牌目录」里人工做。
+      见下面 处理登记() 上头那段。 */
+function 处理缺目录(p, 哪条) {
+  const 缺行 = p.items.filter(i => i.miss)
+  if (!缺行.length) return
+  if (哪条 === '改编号') {
+    // 真页面是「信息有误」那个编辑框 —— 编号/罕贵度/品相/备注可改，卡名与卡密属目录、只读。
+    // 所以这里只让改编号，不编卡名。
+    const 新 = prompt(`这个包里查不到目录的编号：\n${缺行.map(i => '  ' + i.code).join('\n')}\n\n`
+      + `输入改正后的编号（真页面走「信息有误」编辑框，编号是可改字段）：`, 缺行[0].code)
+    if (新 === null) return
+    const c = 新.trim()
+    if (!/^[A-Za-z0-9]+-[A-Za-z]{2}\d+$/.test(c)) { 提示('编号长得像「PHNI-JP031」这样。'); return }
+    缺行.forEach(i => { i.code = c; i.miss = false })
+    p.blocked = []
+    p.state = 'frozen'
+    冒一句(`已改成 ${c} —— 真页面这里会拿新编号去卡牌目录重查一遍`)
+  } else if (哪条 === '删行') {
+    if (!confirm(`把查不到目录的这 ${缺行.length} 行从「${p.pack}」里删掉？\n\n`
+      + `删掉的行不再上架。真页面调的是删行那支，**剩下的行不重编号**。`)) return
+    p.items = p.items.filter(i => !i.miss)
+    p.blocked = []
+    p.state = 'frozen'
+    冒一句(`已删掉 ${缺行.length} 行，「${p.pack}」现在可以跑了`)
+  }
+  打开包(p.pack)
+}
+
+/* ---------- 「信息登记」——只记一笔，不解决问题 ----------
+   用户 2026-10-04 定：缺目录这条出口不做「补进卡牌目录」（那支按钮会直接把目录写掉，
+   走的是真图源 tcg-data，V1.1），改成识别上传页那个蓝块/绿块 ——
+   **点一下只是把编号记进「信息登记」清单，改目录是用户本人到「卡牌资料库 ▸ 卡牌目录」去做。**
+   用户原话：「需要我人工确认，只能是我人工点…我人工去修改」。
+
+   后端**现成的，一行新代码都不用加**：
+     · 登记 → POST /api/card-marks  { marks: [{code, rarity}], libraryCode }
+     · 取消 → DELETE /api/card-marks/:code?rarity=XX
+     · 粒度是 (编号, 罕贵度)；`rarity:''` 是**通配**（不限罕贵度）。
+   ⚠️ 有的编号进这个页面时**本来就是绿的** —— 新卡进来 / 改编号这两条写路径会调
+      CardMark.autoRegister（只按编号查目录，查不到就自动记一条通配）。所以
+      「自动登记」这条路已经把大部分缺目录编号记过了；这个按钮补的是"还没被记上的"。
+
+   ⚠️⚠️ **登记 ≠ 目录补上了。** 这张卡还是没有卡密（ext）、没有卡名、没有图，
+        上架了也是空壳、订单拣不到 —— 所以**包上那道闸（不可上架）照样在**，
+        这不是 bug。闸认的是「卡牌目录里有没有这个编号」，不是这张待办清单。
+        （用户之前拍板过「不能先搁着、必须先处理掉」，跟这条一致。）
+        补完目录，前端重查一次，橙边自己就没了 —— 跟这个绿块是两条独立的路。
+
+   真页面上这张清单本来就有地方看，不用另做待办页：
+     「卡牌资料库 ▸ 卡牌目录」里会列出来（catalog.vue 的「本包有 N 条登记在卡表里对不上」，
+      以及「归不到任何卡包的登记记录」那份清单）。
+   所以从一键上架点一下登记，等于把编号丢进了那个现成的待办清单。 */
+function 处理登记(p, 键) {
+  const 行 = p.items.find(i => 行键(i) === 键)
+  if (!行 || !行.miss) return
+  if (行.登记) {
+    if (!confirm(`取消「${行.code}」的信息登记？\n\n`
+      + `取消之后这个编号就从待办清单里出去了（真页面在上传页也有同一个入口：绿块再点一下＝取消登记）。\n`
+      + `注意：如果这条是**机器自动记的**（编号在目录里查不到时那条写路径会自己记），\n`
+      + `删掉之后只要那张卡再被写一次，它还会自己回来。`)) return
+    行.登记 = false
+    冒一句(`已取消「${行.code}」的信息登记`)
+  } else {
+    行.登记 = true
+    冒一句(`已登记「${行.code}」—— 到「卡牌资料库 ▸ 卡牌目录」里人工补；补完橙边会自己消掉`)
+  }
+  打开包(p.pack)
+}
+
+// ============================================================
+// 包详情
+// ============================================================
+// 只读模式：从「已上架库」点进来的详情。
+// 已经跑完的包不该再让人改 —— 价格输入框、起点、「标记已上架」竖条全撤掉，
+// 头部那两个按钮（自动上架 / 急停）也藏起来。说"只读"就是真只读，不然一眼看不出这两屏的区别。
+let 只读包 = false
+
+function 打开包(name) {
+  // ① 整批跑着的时候不许点进包详情。原因很实在：下面那句
+  //    `if (跑中 && (只读包 || 跑中.包 !== 当前包.pack)) 停跑()` 会把整批正在跑的那个包
+  //    掀掉 —— 批跑 还在、跑中 没了，整批就卡在半路，而界面上看不出为什么。
+  //    真页面也有一模一样的隐患（auto-listing.vue:1268 那处 停跑），一并按这个思路挡。
+  if (批跑) { 冒一句('整批正在跑，要看包先按「■ 终止」。'); return }
+  // 只有真的换了一个包才清起点：点「标记已上架」也是走这里重渲染，
+  // 无脑清会把用户刚选的「从这一行开始」一起清掉，得重新点一次。
+  const 换包 = !当前包 || 当前包.pack !== name
+  // 两个列表里找：待上架的、已上架的。找到哪个决定是不是只读。
+  const 待 = 包.find(p => p.pack === name)
+  当前包 = 待 || 待归档包.find(p => p.pack === name) || 已归档包.find(p => p.pack === name)
+  只读包 = !待
+  if (!当前包) return
+  // 换到别的包（或者换成了只读的存档）就把跑着的那趟掐掉 —— 计时器不认界面，
+  // 不停的话它会继续往上一个包里填。同一个包重渲染（点「标记已上架」）不动它。
+  if (跑中 && (只读包 || 跑中.包 !== 当前包.pack)) 停跑()
+  if (换包) {
+    选中行 = null
+    // 方框里挂着的是上一个包、上一趟跑完的小结 —— 换包了就不该再挂着，
+    // 不然新包里会显示上一个包的"失败 N 张"，像是这个包的问题。
+    方框 = { 内容: '', 档: 's-idle', 给谁: 'none' }
+  }
+  document.getElementById('viewPending').style.display = 'none'
+  document.getElementById('viewListed').style.display = 'none'
+  // 库位详情那一屏也要收 —— 从库位详情点进某个包的卡片是可能的路径，
+  // 不收的话两层都亮着，回来时不知道自己在哪一层。
+  document.getElementById('viewLibDetail').style.display = 'none'
+  document.getElementById('viewDetail').style.display = 'block'
+  document.getElementById('dName').textContent = 当前包.pack
+  const cnt = { A: 0, B: 0, C: 0 }
+  当前包.items.forEach(i => cnt[i.flow]++)
+  document.getElementById('dInfo').textContent =
+    `${当前包.total.toLocaleString()} 张 · 流程 A/B/C = ${cnt.A}/${cnt.B}/${cnt.C}`
+  // 头部三个随模式变的东西：状态字、两个动作按钮、下面那句提示。
+  // 「已冻结」那行撤了（用户定的）：包里这些卡确实被后端上了锁，但那是解析的副产品，
+  // 界面上不该有个词天天提醒你 —— 留着反而像有个"解冻"的手动动作可以点。
+  // 于是只剩两种真需要说的情况：跑完的（存档）、有编号查不到目录的（整包不可上架）。
+  // 都不是就把整枚藏起来 —— 留个空 span 照样占位，会把右边的两个按钮顶偏。
+  // 只读有两种，得分开说 —— 一个还在中转站（能「放回」），一个已经进库位了（退不回来）：
+  const 在待归档 = 只读包 && 待归档包.some(p => p.pack === 当前包.pack)
+  const 状态字 = 只读包
+    ? (在待归档 ? `✅ 已确认完成 · 待归档` : `✅ 已归档 ${当前包.done}`)
+    : (当前包.state === 'blocked' ? '⚠ 不可上架' : '')
+  const 状态标 = document.getElementById('dState')
+  状态标.textContent = 状态字
+  状态标.style.display = 状态字 ? '' : 'none'
+  状态标.style.color = 只读包 ? '#22B573' : '#4A90D9'
+  document.getElementById('btnAuto').style.display = 只读包 ? 'none' : ''
+  document.getElementById('btnStop').style.display = 只读包 ? 'none' : ''
+  按钮随跑态()      // 换包/换模式以后，两个按钮的状态要跟着当前的跑没跑复位
+  document.getElementById('dHint').textContent = 只读包
+    ? (在待归档
+        ? '这个包已确认完成，在「已上架包」里等整批归档。要改它，先在那一屏点它的「放回」。'
+        : '这个包已经归档进库位了：这里是存档，能看到当时上的每一张卡、成功的和失败的。')
+    : '点任意一行设为起点 → 点「自动上架」就从这一行往下跑；绿色的自动跳过。'
+
+  // ===== 缺目录那条黄带子：不只是"告诉你"，还要把出口摆在上面 =====
+  // 用户问过"编号在卡牌目录里查不到，不就是标红、我人工处理吗" —— 答案分两半：
+  //   · 它**不是红**。红（.card-row.failed）是"跑挂了"；缺目录是**橙**（包卡片左竖条 .blocked），
+  //     两回事。用户看到的"红"多半是那一行卡图上那个**红边空框**（.cimg.miss，不放卡背）。
+  //   · 但它**确实是人工处理**，出口早就该摆在这儿。
+  // 出口分两类，带子上也要分开写，别混成一句：
+  //   · 就地解决（.nb-btn，黄框）——「改编号」「删掉这一行」。点完这个包就能跑了，是**真解掉**。
+  //   · 记一笔待办（.reg-block，蓝→绿）——「信息登记 ⇄ 信息已登记」。**不解掉**，
+  //     只是把编号丢进待办清单，目录还得你自己去补。见 处理登记() 上头那段。
+  //     （原来这儿的第三枚按钮是「补进卡牌目录」，2026-10-04 用户定撤掉，换成这个。）
+  // 为什么出口都在前端这一侧：这个状态本身就**没有落库** —— 它是批量查卡牌目录
+  // （POST /api/tcg/cards，响应里 missing 那批编号记进 未找到）现算出来的，刷新就重来一遍。
+  // 所以：改编号 → 清掉 miss；删行 → 行没了。两条都不用「撤回」—— 为一张卡退一整批不划算。
+  const banner = document.getElementById('dBanner')
+  const 缺行 = 当前包.items.filter(i => i.miss)
+  if (!只读包 && 缺行.length) {
+    banner.style.display = 'block'
+    banner.innerHTML = `⚠ 这个包有 <b>${缺行.length}</b> 个编号在卡牌目录里查不到
+      （${缺行.map(i => i.code).join('、')}）—— <b>整包不允许上架</b>。
+      <div class="nb-line">就地解决，挑一条：
+        <span class="nb-btns">
+          <button class="nb-btn" data-miss="改编号">改编号</button>
+          <button class="nb-btn" data-miss="删行">删掉这一行</button>
+        </span>
+      </div>
+      <div class="nb-line">来不及现在就补、想先记一笔（改目录是你自己到「卡牌资料库 ▸ 卡牌目录」去做），点「信息登记」：
+        ${缺行.map(i => `<span class="reg-block ${i.登记 ? 'on' : ''}" data-reg="${行键(i)}"
+          title="${i.登记
+            ? '已登记 · 待你人工补目录。这张卡还是上不了架 —— 目录补上之后橙边才会自己消掉。点一下可以取消登记'
+            : '点一下只往「信息登记」清单里记一笔：不改目录、不动真图源。补目录仍然是你人工去补'}">${i.登记 ? '信息已登记' : '信息登记'} · ${i.code}</span>`).join('')}
+      </div>`
+    banner.querySelectorAll('[data-miss]').forEach(b => {
+      b.addEventListener('click', () => 处理缺目录(当前包, b.dataset.miss))
+    })
+    banner.querySelectorAll('[data-reg]').forEach(b => {
+      b.addEventListener('click', () => 处理登记(当前包, b.dataset.reg))
+    })
+  } else { banner.style.display = 'none' }
+
+  // 一条扁平的列表，**不再按流程分成三块、上面的分组标题条也撤了**。
+  // 排法是用户定的：**先按流程 A→B→C**，同一档里再按编号后缀的数字升序（JP001 → JP002 → … → JP031）。
+  // 「流程 A/B/C = x/y/z」那个汇总留在上面的 dInfo 里，分组标题那一条就多余了 ——
+  // 哪一行归哪一档，看每张卡右端那枚签子的颜色就行。
+  document.getElementById('dGroups').innerHTML =
+    `<div class="card-list">${[...当前包.items].sort(排序用).map(卡).join('')}</div>`
+
+  绑行事件()
+  渲染当前卡框()    // 换包时上面那句可能刚把 方框 清空，这里把详情屏那枚同步回空态
+}
+
+// VM 跑完会返回这 14 个输出（`auto-execute-vm.js:238-240` 那串）。
+// 现在后端只落了前 4 个（集换价/最低价/价格/运行状态），其余 10 个**只在响应里晃一下就没写库**。
+const 输出键 = [
+  '编号(输出)', '罕贵度(输出)', '中文卡名(输出)', '中文别名(输出)', '语种(输出)',
+  '游戏版本(输出)', '行数(输出)', '运行状态(输出)', '数量(输出)', '价格(输出)',
+  '集换价(输出)', '最低价(输出)', '备注(输出)', '输入框编号(输出)',
+]
+
+// 这 14 项分三组（用户定的），照着"看的时候想问什么"分：
+//   ① 卡的身份 —— 这是哪张卡？（编号/罕贵/两个名字，外加输入框里那个原始编号）
+//   ② 上架内容 —— 这一行打算怎么上？（语种/版本/数量/三个价）
+//   ③ 结果与备注 —— 跑成没有？附言是什么？
+// ⚠️ 分组只影响**显示**（顺序 + 小标题带子），一个字都不动 `输出键` ——
+//     那个数组是 VM 返回的原始顺序，将来落库也照它来。
+const 输出分组 = [
+  { 名: '卡的身份', 键: ['编号(输出)', '罕贵度(输出)', '中文卡名(输出)', '中文别名(输出)', '输入框编号(输出)'] },
+  { 名: '上架内容', 键: ['语种(输出)', '游戏版本(输出)', '行数(输出)', '数量(输出)', '价格(输出)', '集换价(输出)', '最低价(输出)'] },
+  { 名: '结果与备注', 键: ['运行状态(输出)', '备注(输出)'] },
+]
+// 兜底：三组必须不多不少盖住全部 14 项。但**不去靠"加字段时记得改两处"** ——
+// 漏掉的那种错在页面上就是少一行，没人看得出来。所以在这里现算一次，
+// 有漏的就补一条「未归类」的带子把它顶出来（见着了就知道该去改上面的分组）。
+{
+  const 已归 = new Set(输出分组.flatMap(g => g.键))
+  const 漏的 = 输出键.filter(k => !已归.has(k))
+  if (漏的.length) 输出分组.push({ 名: '未归类', 键: 漏的 })
+}
+
+// ===== 「详细」弹层：一个弹层两张脸，顶上按钮翻页 =====
+// 脸① 输出参数（默认）：自动上架跑完返回的那 14 项。
+// 脸② 实体卡：这一行背后每张实体卡的流水号 / 库位号。
+// 说"翻页"就是把这两块内容**换着显示**，不是叠在一起 —— 竖屏并排放不下两块。
+let 详细键 = null
+let 详细面 = 'out'          // 默认停在「输出参数」那张脸（用户定的）
+
+function 画输出面(it) {
+  const o = it.outs
+  if (!o) return `<div class="out-none">这张卡还没跑过自动上架，没有任何输出参数。<br>
+       跑完之后这 14 项会回填到这里（卡名那两项就是留着以后改名的）。</div>`
+  const 行 = k => `<div class="out-row"><span class="out-k">${k.replace('(输出)', '')}</span>`
+      + `<span class="out-v">${o[k] ? o[k] : '<i>（空）</i>'}</span></div>`
+  return 输出分组.map(g =>
+      `<div class="out-g">${g.名}<span class="out-n">${g.键.length} 项</span></div>`
+      + g.键.map(行).join('')).join('')
+    + (it.err ? `<div class="out-err">失败原因：${it.err}</div>` : '')
+}
+
+function 画实体卡面(it) {
+  const 卡 = 实体卡(it)
+  // 一张都没有（add = 0）时别丢一张空表出来，直接说清楚
+  if (!卡.length) return `<div class="out-none">这一行本次不上架（0 张），没有实体卡。</div>`
+  return `<div class="loc-head"><span>共 ${it.add} 张实体卡</span>`
+      + `<span style="margin-left:auto">原始库存 ${it.old} 张 · 目标库存 ${it.old + it.add} 张</span></div>`
+    + 卡.map((c, k) =>
+        `<div class="loc-row"><span class="loc-idx">${k + 1}</span>`
+        + `<span class="loc-serial">${c.serial}</span>`
+        + `<span class="loc-lib">${c.lib}</span></div>`).join('')
+}
+
+// 把当前这张脸画出来。翻页和换行都走这里，别各自 innerHTML 一份。
+function 画详细() {
+  const it = 找行(详细键)
+  if (!it) return
+  document.getElementById('dtTitle').textContent =
+    `${it.code} ${it.rarity} · ${it.cn || it.jp || '（无名称）'}`
+  document.getElementById('dtOutN').textContent = it.outs ? 输出键.length : 0
+  document.getElementById('dtLocN').textContent = it.add
+  document.querySelectorAll('#dtMask .dt-tab').forEach(b =>
+    b.classList.toggle('on', b.dataset.face === 详细面))
+  document.getElementById('dtBody').innerHTML = 详细面 === 'out' ? 画输出面(it) : 画实体卡面(it)
+}
+
+// 打开某一行的「详细」。面不传就落在默认那张（输出参数）。
+function 打开详细(键, 面) {
+  详细键 = 键
+  详细面 = 面 || 'out'
+  画详细()
+  document.getElementById('dtMask').style.display = 'flex'
+}
+
+// 点「×目标库存」冒出来的三条数字。位置按小框自己算：默认贴在小框正上方、右边缘对齐，
+// 上面放不开就翻到下面 —— 最后一行卡片的下面正好是空的。
+function 显示数量框(el, it) {
+  const 目标 = it.old + it.add
+  const p = document.getElementById('qtyPop')
+  p.innerHTML =
+    `<div><span class="qp-k">原始库存</span><span class="qp-v">${it.old} 张</span></div>` +
+    `<div><span class="qp-k">本次上架</span><span class="qp-v">${it.add} 张</span></div>` +
+    `<div><span class="qp-k">目标库存</span><span class="qp-v qp-total">${目标} 张</span></div>`
+  p.style.display = 'block'
+  const r = el.getBoundingClientRect()
+  const w = p.offsetWidth, h = p.offsetHeight
+  let left = r.right - w                 // 右边缘跟小框对齐
+  if (left < 8) left = 8
+  let top = r.top - h - 8                // 优先放上方
+  if (top < 8) top = r.bottom + 8        // 上方不够就翻到下面
+  p.style.left = left + 'px'
+  p.style.top = top + 'px'
+}
+const 收数量框 = () => { document.getElementById('qtyPop').style.display = 'none' }
+document.addEventListener('click', 收数量框)
+window.addEventListener('scroll', 收数量框, true)
+
+
+// 撤回「已上架」前问一句。传进一个回调，点「确定撤回」才执行。
+let 待确认 = null
+function 问一句(标题, 正文, 确定文案, 回调) {
+  document.getElementById('cfTitle').textContent = 标题
+  document.getElementById('cfText').innerHTML = 正文
+  document.getElementById('cfYes').textContent = 确定文案
+  待确认 = 回调
+  document.getElementById('cfMask').style.display = 'flex'
+}
+function 关确认() { document.getElementById('cfMask').style.display = 'none'; 待确认 = null }
+document.getElementById('cfNo').addEventListener('click', 关确认)
+document.getElementById('cfYes').addEventListener('click', () => {
+  const f = 待确认
+  关确认()
+  if (f) f()
+})
+document.getElementById('cfMask').addEventListener('click', e => {
+  if (e.target.id === 'cfMask') 关确认()
+})
+// 「详细」弹层：✕ 或点遮罩关掉（点盒子里不关）。两枚翻页按钮在同一个地方绑，
+// 绑一次就够 —— 弹层本身不重建，只有 #dtBody 里的内容每次重画。
+const 关详细 = () => { document.getElementById('dtMask').style.display = 'none' }
+document.getElementById('dtClose').addEventListener('click', 关详细)
+document.getElementById('dtMask').addEventListener('click', e => {
+  if (e.target.id === 'dtMask') 关详细()
+})
+document.querySelectorAll('#dtMask .dt-tab').forEach(b => {
+  b.addEventListener('click', () => { 详细面 = b.dataset.face; 画详细() })
+})
+
+// ===== 点卡图 → 全屏 =====
+// 先试原图；原图落空（图源里没有这张 / 这卡压根没卡密）就退到缩略图；再落空才显示一句话。
+// 200px 的缩略图撑到全屏会糊，但总比一片空白好 —— 而且这时候本来就该去补图源了。
+function 打开大图(小图地址, 大图地址) {
+  const im = document.getElementById('zoomImg')
+  const 退 = [大图地址, 小图地址]
+  let i = 0
+  im.onerror = () => {
+    i++
+    if (i < 退.length) { im.src = 退[i]; return }
+    im.onerror = null
+    im.removeAttribute('src')
+    document.getElementById('zoomTip').textContent = '这张卡取不到大图（图源里没有）'
+  }
+  document.getElementById('zoomTip').textContent = '点任意处关闭'
+  im.src = 退[0]
+  document.getElementById('zoomMask').style.display = 'flex'
+}
+function 关大图() {
+  document.getElementById('zoomMask').style.display = 'none'
+  document.getElementById('zoomImg').removeAttribute('src')   // 下次打开重新走一遍兜底链
+}
+document.getElementById('zoomMask').addEventListener('click', 关大图)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return
+  // 从最上面那层往下关：大图（110）> 详细弹层（100）> 数量小框。
+  // 大图是从详细里点卡图打开的，Esc 就该先关大图、再按一次才关详细。
+  if (document.getElementById('zoomMask').style.display === 'flex') 关大图()
+  else if (document.getElementById('dtMask').style.display === 'flex') 关详细()
+  else 收数量框()
+})
+
+// ===== 点编号 → 复制 + 冒一句 =====
+// file:// 下 `navigator.clipboard` 不一定给用（要安全上下文、要焦点），所以失败就退到老的
+// `execCommand`。两条都不行也不拦着提示 —— 这是原型，重点是那个提示长什么样；
+// 真接进项目时这里换成前端现成的复制工具。
+async function 复制文本(文本) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(文本); return true }
+  } catch (_) { /* 往下走兜底 */ }
+  try {
+    const t = document.createElement('textarea')
+    t.value = 文本
+    t.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+    document.body.appendChild(t)
+    t.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(t)
+    return ok
+  } catch (_) { return false }
+}
+let 提示计时 = null
+function 冒一句(文本) {
+  const t = document.getElementById('toast')
+  t.textContent = 文本
+  t.classList.add('on')
+  if (提示计时) clearTimeout(提示计时)
+  提示计时 = setTimeout(() => t.classList.remove('on'), 1600)
+}
+
+// 一条卡片的排版，**整段照识别上传页**（batch-recognize.vue 的 .card-item）：
+//   左边卡图 | 中间四行 | 右边一条竖块
+//   第 1 行 .name-main 中文名（大字，没有中文名才退回日文名顶上，免得标题空着）
+//   第 2 行 .name-sub  日文名（小字灰，两个名字都有才显示）
+//   第 3 行 .card-meta 编号 / 罕贵度 / 品相 / 备注（并排一行，间距 8px）
+//   第 4 行 .card-codes 卡密（最左，蓝底小胶囊）+ 异画标签（有才显示）
+// 注意「输出参数」和「集换价」这两块先撤了（用户要求先不搞），弹层那段代码留着，加回来只要几行。
+function 卡(i) {
+  const 已标 = i.st === 'green' || i.st === 'manual'
+  const 失败 = i.st === 'red'
+  const 键 = 行键(i)
+  // 这一行是不是机器正停在上面的那张（跑的时候每 5 秒换一行）
+  const 跑这行 = !!(跑中 && 当前包 && 跑中.包 === 当前包.pack && 跑中.当前键 === 键)
+  const cls = ['card-row', 已标 ? 'listed' : '', 失败 ? 'failed' : '',
+    只读包 ? 'ro' : '', 跑这行 ? 'running' : '',
+    选中行 === 键 && !只读包 ? 'cur' : '']
+    .filter(Boolean).join(' ')
+  const img = (i.miss || !i.ext)
+    ? `<div class="cimg miss" title="编号在卡牌目录里查不到，红边无图"></div>`
+    : `<img class="cimg" data-zoom="${键}" src="${IMG(i.ext, i.code, i.rarity)}" onerror="this.outerHTML='<div class=\\'cimg miss\\'></div>'">`
+  // 第 1 行放**中文名**（大字），第 2 行放日文名（小字）—— 用户要的顺序。
+  // 主名：中文名优先，没有中文名才退回日文名顶上（免得标题空着）。
+  const 主名 = i.cn || i.jp || `<span class="noname">（无名称）</span>`
+  // 副名：**只有中文名和日文名都有**才显示。
+  // 真库里绝大多数卡只有日文名 —— 不加这个判断，主名退回日文名之后，
+  // 第 2 行又原样再印一遍日文名，看着像哪里渲染重了。
+  const 副名 = (i.cn && i.jp) ? i.jp : ''
+  // 异画标签显示的是**标签自己的值**（原画/初版/异画/待填…），不是「有异画/无异画」。
+  // 空标签（这张卡没有异画）就整块不显示。
+  // 「待填」是占位符（真库 306 条有异画的行里 302 条还挂着它）→ 灰底，一眼看出这个标签还没人填过。
+  const 异画 = i.alt
+    ? `<span class="alt-badge ${i.alt === '待填' ? 'alt-none' : 'alt-has'}">${i.alt}</span>`
+    : ''
+  const 目标 = i.old + i.add
+  return `
+    <div class="${cls}" data-row="${键}">
+      ${img}
+      <div class="cinfo">
+        <div class="name-main">${主名}${只读包 ? '' : `<span class="tag-group"><span class="start-tag">起点</span><span class="run-tag">正在执行中</span><span class="flow-tag ${String(i.flow).toLowerCase()}">流程${i.flow}</span></span>`}</div>
+        <div class="name-sub">${副名}</div>
+        <div class="card-meta">
+          <span class="meta-text code-text" data-copy="${键}" title="点一下复制编号">${i.code}</span>
+          <span class="meta-text">${i.rarity}</span>
+          <span class="meta-text">${i.cond}</span>
+          ${i.note ? `<span class="meta-text note-text" data-copy="${键}" title="点一下复制备注">${i.note}</span>` : ''}
+        </div>
+        <div class="card-codes">
+          <span class="ext-code" data-copy="${键}" title="卡密（前端补齐到 8 位）：点一下复制；三格卡名就是拿它去唯一目录里取的">${i.ext ? 补零(i.ext) : '（无卡密）'}</span>
+          ${异画}
+          <span class="cqty-group">
+            <button class="cdetail-btn" data-detail="${键}">详细</button>
+            ${只读包
+              ? `<span class="cprice-ro" title="当时上架用的价格">${i.jhj ? 价格显示(i.jhj) : '—'}</span>`
+              : `<input class="cprice-input" data-price="${键}" value="${价格显示(i.jhj)}" placeholder="上架价格">`}
+            <span class="cqty" data-qty="${键}">× ${目标}</span>
+          </span>
+        </div>
+        ${失败 && i.err ? `<div class="cerr">${i.err}</div>` : ''}
+      </div>
+      ${只读包 ? '' : `<div class="cmark ${已标 ? 'on' : ''}" data-mark="${键}">
+        <span class="cmark-text">${已标 ? '已上架' : '标记已上架'}</span>
+      </div>`}
+    </div>`
+}
+
+function 绑行事件() {
+  // 「上架价格」小输入框可以直接手填（将来的自动上架也往同一个字段 `it.jhj` 里灌）。
+  // 显示规矩（用户定的）：**放着不动时显示「78.00元」，动手改时看到的是原样数字**。
+  //   聚焦 → 把框换成 `it.jhj` 原样（不然你得先删掉「元」字才能改）
+  //   输入 → 只改数据、不重画；存的就是你敲的那串原样，不补零不加「元」
+  //   失焦 → 按 价格显示() 显示回来（78 → 78.00元、78.126 → 78.12元）
+  // ⚠️ **绝不能重渲染整个包** —— 一重渲染光标就没了，敲第二个数字就跳出去。
+  // click 要 stopPropagation：不然点一下输入框顺手就把这一行选成「起点」了。
+  document.querySelectorAll('#dGroups input[data-price]').forEach(inp => {
+    const it = 找行(inp.dataset.price)
+    const 原样 = () => (it && it.jhj != null ? String(it.jhj) : '')
+    inp.addEventListener('click', e => e.stopPropagation())
+    inp.addEventListener('focus', () => { inp.value = 原样() })
+    inp.addEventListener('input', () => { if (it) it.jhj = inp.value })
+    inp.addEventListener('blur', () => { inp.value = 价格显示(原样()) })
+    // 敲回车就当填完了：不然得拿鼠标点别处才看得到「78.00元」。blur() 会触发上面那条。
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur() })
+  })
+  // 点卡图 → 全屏看大图。
+  // 只绑 `img.cimg`：`.cimg.miss`（查不到目录的红边空框）没图可看，仍按原样穿透到行上选「起点」。
+  document.querySelectorAll('#dGroups img.cimg[data-zoom]').forEach(im => {
+    im.addEventListener('click', e => {
+      e.stopPropagation()                       // 不然顺手把这一行选成「起点」了
+      const it = 找行(im.dataset.zoom)
+      if (!it || !it.ext) return                // 没卡密就取不到图（接口要求 password 是纯数字）
+      打开大图(IMG(it.ext, it.code, it.rarity), 大图(it.ext, it.code, it.rarity))
+    })
+  })
+  // 点编号 / 卡密 / 备注 → 复制到剪贴板 + 冒一句「已复制 …」。
+  // 三处都是「要往店铺后台粘」的东西，所以复制的就是**提示里那串**，跟你眼睛看到的一致。
+  // 这里靠 找行() 认准是哪一行 —— 原画和异画同一个编号，只按编号找会永远找着上面那行。
+  // 拼文本() 返回空串就表示「这一格没东西可复制」，这时走 空提示（）而不是复制个占位符走。
+  const 绑复制 = (选择器, 拼文本, 空提示) => {
+    document.querySelectorAll(选择器).forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation()
+        const 整串 = 拼文本(找行(el.dataset.copy), el.textContent)
+        if (!整串) { if (空提示) 冒一句(空提示); return }
+        复制文本(整串)
+        冒一句('已复制 ' + 整串)
+      })
+    })
+  }
+  // 编号：异画那张把标签一起带上（QCAC-JP009（异画））—— 原画和异画是两笔不同的货，
+  // 光给编号人家不知道你要的是哪一张。没有标签的就只有编号。
+  绑复制('#dGroups .code-text[data-copy]', (it, 兜底) => {
+    const 编号 = (it && it.code) || 兜底
+    return it && it.alt ? 编号 + '（' + it.alt + '）' : 编号
+  })
+  // 卡密：复制的是**显示出来的那串**，也就是前面已经补到 8 位的版本。
+  // 真库里那 2,971 行 7 位数是上游当数字存过、丢了前导零，官方卡密是 8 位 —— 粘出去要的是 8 位那版。
+  // **不带（异画）括号**：卡密是「这张卡的身份」，原画和异画共用同一个卡密，缀上括号反而是错的。
+  绑复制('#dGroups .ext-code[data-copy]', (it) => (it && it.ext ? 补零(it.ext) : ''), '这张卡没有卡密')
+  // 备注：原文照抄（78品）。它本来就是要粘进「品相 / 备注」那一格的，加编号反而碍事。
+  绑复制('#dGroups .note-text[data-copy]', (it, 兜底) => (it && it.note) || 兜底)
+  // 点「×目标库存」小框 → 在它旁边冒一个小方框，列三条：原始库存 / 本次上架 / 目标库存。
+  // 用 stopPropagation，不然点一下顺手就把这一行选成「起点」了。
+  document.querySelectorAll('#dGroups .cqty[data-qty]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation()
+      const it = 找行(el.dataset.qty)
+      if (it) 显示数量框(el, it)
+    })
+  })
+  // 「详细」按钮 → 弹层，**默认停在「输出参数」那张脸**（用户定的），
+  // 顶上另一枚按钮翻到「实体卡」（流水号 / 库位号）。
+  document.querySelectorAll('#dGroups .cdetail-btn').forEach(b => {
+    b.addEventListener('click', e => { e.stopPropagation(); 打开详细(b.dataset.detail) })
+  })
+  // 右边竖条：点一下切换。「已上架 → 标记已上架」就是撤回 —— 撤回要问一句，
+  // 因为撤回会把这张卡的**结果**抹掉（自动上架跑过的那批数据就悬空了）。标记不用问，点错了再点回来就行。
+  document.querySelectorAll('#dGroups .cmark[data-mark]').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation()
+      const it = 找行(b.dataset.mark)
+      const 已上 = it.st === 'manual' || it.st === 'green'
+      if (!已上) { it.st = 'manual'; 打开包(当前包.pack); return }
+      const 名 = it.cn || it.jp || it.code
+      问一句('取消上架？',
+        `<b>${名}</b>（${it.code} ${it.rarity}）<br>取消后这张会变回「未上架」，`
+        + (it.st === 'green' ? '这次自动上架的结果作废，要重新跑。' : '你刚才手工标的已上架会被撤销。'),
+        '确定撤回',
+        () => { it.st = 'gray'; 打开包(当前包.pack) })
+    })
+  })
+  // 点卡片本身 = 选成「自动上架起点」（蓝框加粗）
+  // 只读版整段跳过：那个包早跑完了，起点是个没有意义的操作态。
+  if (只读包) return
+  document.querySelectorAll('#dGroups .card-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      选中行 = tr.dataset.row
+      document.querySelectorAll('#dGroups .card-row').forEach(x => x.classList.remove('cur'))
+      tr.classList.add('cur')
+    })
+  })
+}
+
+// ============================================================
+// 已上架
+// ============================================================
+function 渲染已上架() {
+  const box = document.getElementById('listedList')
+  // 左列那两行。**先算再判空** —— 确认完最后一个包的时候这一屏正是"有内容"的那一屏，
+  // 早退在判空后面的话统计就永远是初始值。
+  document.getElementById('lStatus').textContent = `已上架 ${待归档包.length} 个包 · 待归档`
+  document.getElementById('lBatch').textContent =
+    `${待归档包.reduce((a, p) => a + p.total, 0).toLocaleString()} 张卡`
+  刷新整批按钮()   // 切到这一屏时，整屏那枚「整批归档」也要按当前 `包` 重新定亮不亮
+  if (!待归档包.length) {
+    box.innerHTML = `<div class="empty" style="padding:28px 20px;line-height:1.9">
+      这一屏还是空的。<br>
+      包在「待上架包」跑完、并且 <b>0 灰 0 红</b>（没有没跑完的、也没有失败没处理的）之后，
+      点它右边那枚<b>「确认完成」</b>，包就搬到这儿来。<br>
+      这儿是<b>中转站</b>：整批核对无误，再按上面那枚<b>「整批归档」</b>进「已上架库」。
+    </div>`
+    return
+  }
+  box.innerHTML = 待归档包.map(p => `
+    <div class="pkg done" data-done-pack="${p.pack}" style="cursor:pointer">
+      <div class="pkg-main">
+        <div class="pkg-bar">
+          <span class="handle" style="visibility:hidden">⋮⋮</span>
+          <span class="bar"><i style="width:100%"></i></span>
+        </div>
+        <div class="row2">
+          <span class="name">${p.pack}</span>
+          <span class="qty">${p.total.toLocaleString()} 张</span>
+          <span class="spacer"></span>
+          <span class="state">确认于 ${p.done}</span>
+        </div>
+        <div class="flows">
+          <span class="chip a">成功 ${p.ok}</span>
+          ${p.bad ? `<span class="chip warn">失败 ${p.bad}（待处理）</span>` : ''}
+        </div>
+      </div>
+      <!-- 这一枚是「已完成」那块位置上的**活口**：包已经过了一遍人工核对，
+           但归档还没发生，所以随时能放回去改。归档之后这个口就没了（那时只能整批撤回）。 -->
+      <button class="pkg-finish back" data-putback="${p.pack}" title="退回「待上架包」继续改">
+        <span class="ft">放回</span>
+      </button>
+    </div>`).join('')
+  box.querySelectorAll('.pkg').forEach(el => {
+    el.addEventListener('click', e => {
+      // 跟包列表同一个坑：右边那枚按钮长在卡片**里面**，不加这道守卫，
+      // 点「放回」会顺手把只读详情也打开。
+      const 放 = e.target.closest('[data-putback]')
+      if (放) { 放回(放.dataset.putback); return }
+      打开包(el.dataset.donePack)
+    })
+  })
+}
+
+// ============================================================
+// 已上架库（按「库位」分组 —— 跟上面「已上架包」按包分组是两回事）
+// ============================================================
+// 分组键 = serialList 里每一段的前 9 位（`A0-000-07-0042` → `A0-000-07`）。
+// 真代码：ListingQueue.serialList（Server/src/Models/ListingQueue.js:19）逐段切前 9 位。
+// 为什么非得有这个视角 —— 两件不同的事：
+//   ① 一个包里的卡散在好几个库位 → 同一个包会出现在好几组里；
+//   ② 一个库位混装好几个包的卡 → 同一组里会有好几个包。
+// 所以「PHNI 上完了」和「A0-000-07 这个盒子清完了」不是一回事。
+// 要按盒子去核实物，只能看这一屏。
+function 分组按库位() {
+  const 表 = new Map()   // lib → { lib, 张, ok, bad, 包:Map(pack → 张) }
+  for (const p of 已归档包) {
+    for (const it of (p.items || [])) {
+      // 一「行」背后是 add 张实体卡，每张一个库位 —— 所以是按 实体卡(it) 分，不是按行分
+      for (const k of 实体卡(it)) {
+        let g = 表.get(k.lib)
+        if (!g) { g = { lib: k.lib, 张: 0, ok: 0, bad: 0, 包: new Map() }; 表.set(k.lib, g) }
+        g.张++
+        if (it.st === 'red') g.bad++; else g.ok++
+        g.包.set(p.pack, (g.包.get(p.pack) || 0) + 1)
+      }
+    }
+  }
+  // 库位号从小到大排 —— 跟真库的物理盒子顺序一致，抄库的时候能照着走
+  return [...表.values()].sort((a, b) => (a.lib < b.lib ? -1 : a.lib > b.lib ? 1 : 0))
+}
+
+function 渲染库屏() {
+  const box = document.getElementById('libList')
+  const 组 = 分组按库位()
+  const 张 = 组.reduce((a, g) => a + g.张, 0)
+  document.getElementById('kStatus').textContent = `已归档 ${已归档包.length} 个包`
+  document.getElementById('kBatch').textContent = `${组.length} 个库位 · ${张} 张卡`
+  if (!组.length) {
+    box.innerHTML = `<div class="empty">还没有卡进库位 —— 在「已上架包」那一屏点「整批归档」之后，这里才有东西。</div>`
+    return
+  }
+  box.innerHTML = 组.map(g => `
+    <div class="pkg done lib-grp" data-lib="${g.lib}" style="cursor:pointer">
+      <div class="pkg-main">
+        <div class="pkg-bar">
+          <span class="handle" style="visibility:hidden">⋮⋮</span>
+          <span class="bar"><i style="width:${g.bad ? Math.round(g.ok / g.张 * 100) : 100}%"></i></span>
+        </div>
+        <div class="row2">
+          <span class="name">${g.lib}</span>
+          <span class="qty">${g.张} 张</span>
+          <span class="spacer"></span>
+          <span class="state">${g.包.size} 个包</span>
+        </div>
+        <div class="flows">
+          ${[...g.包.entries()].map(([k, n]) => `<span class="chip b">${k} ${n}</span>`).join('')}
+          ${g.bad ? `<span class="chip bad">失败 ${g.bad}</span>` : ''}
+        </div>
+      </div>
+      <div class="pkg-finish ok" style="cursor:default"><span class="ft">看卡</span></div>
+    </div>`).join('') + `
+    <div class="lib-note">⚠️ 原型里每个包只放了<b>几行样子</b>（真跑起来一个包几百行），
+      所以这里每个库位的张数是样子数。真页面按 ListingQueue.serialList 全量分。</div>`
+  // 点一下进**库位详情**：这个盒子里**全部**的卡，跨包、跨批次 —— 用户要的口径
+  //（「看这个库位里的全部卡（跨包）」）。这是三步走里唯一一个"按盒子核实物"的地方，
+  // 所以它必须是终点站里的可下钻的一层，不能只冒一句提示。
+  box.querySelectorAll('[data-lib]').forEach(el => {
+    el.addEventListener('click', () => 打开库位(el.dataset.lib))
+  })
+}
+
+// ============================================================
+// 库位详情：一个盒子里的全部卡，**跨包 / 跨批次**
+// ============================================================
+// 为什么非要有这一层：`已归档包` 是按包存的，可实物是**按盒子**码的。
+// 一个包里的卡散在几个库位、一个库位混装几个包的卡 —— 照包看永远对不上货架。
+// 所以这一屏不分组、不分批，把一个库位里的每一张实体卡平铺出来，按流水号排。
+// 行上带包名，是为了让你知道"这张是哪个包的" —— 出问题时能顺着包名去找那一批。
+function 库位卡们(lib) {
+  const 出 = []
+  for (const p of 已归档包) {
+    for (const it of (p.items || [])) {
+      for (const k of 实体卡(it)) {
+        if (k.lib === lib) 出.push({ pack: p.pack, it, serial: k.serial })
+      }
+    }
+  }
+  // 按流水号排 —— 跟真库里卡位号连续重排之后的样子一致（归档时逐库压实过）。
+  return 出.sort((a, b) => (a.serial < b.serial ? -1 : a.serial > b.serial ? 1 : 0))
+}
+
+function 打开库位(lib) {
+  const 卡们 = 库位卡们(lib)
+  const 包数 = new Set(卡们.map(c => c.pack)).size
+  const 坏 = 卡们.filter(c => c.it.st === 'red').length
+  document.getElementById('ldName').textContent = lib
+  document.getElementById('ldInfo').textContent = `${卡们.length} 张 · 混装 ${包数} 个包`
+  document.getElementById('ldBad').textContent = 坏 ? `⚠ 其中 ${坏} 张是失败的` : '全部成功'
+  document.getElementById('ldBad').style.color = 坏 ? '#FF3B30' : '#22B573'
+
+  document.getElementById('ldBody').innerHTML = 卡们.length
+    ? `<div class="card-list">${卡们.map((c, n) => 库位行(c, n)).join('')}</div>`
+    : `<div class="empty">这个库位里没有卡。</div>`
+
+  // 点任意一行 → 打开**那个包**的只读详情。从盒子反查包，是这一屏最常用的一步
+  //（"这张卡是哪批上的？"→ 看包名 → 点进去看当时那一包的全貌）。
+  document.querySelectorAll('#ldBody [data-lib-pack]').forEach(el => {
+    el.addEventListener('click', () => 打开包(el.dataset.libPack))
+  })
+
+  document.getElementById('viewLibrary').style.display = 'none'
+  document.getElementById('viewLibDetail').style.display = 'block'
+  window.scrollTo(0, 0)
+}
+
+function 库位行(c, n) {
+  const it = c.it
+  const 坏 = it.st === 'red'
+  const img = (it.miss || !it.ext)
+    ? `<div class="cimg miss" title="编号在卡牌目录里查不到，红边无图"></div>`
+    : `<img class="cimg" src="${IMG(it.ext, it.code, it.rarity)}" onerror="this.outerHTML='<div class=\\'cimg miss\\'></div>'">`
+  return `
+    <div class="card-row listed ro ${坏 ? 'failed' : ''}" data-lib-pack="${c.pack}">
+      ${img}
+      <div class="cinfo">
+        <div class="name-main">${it.cn || it.jp || '<span class="noname">（无名称）</span>'}</div>
+        <div class="name-sub">${it.cn && it.jp ? it.jp : ''}</div>
+        <div class="card-meta">
+          <span class="meta-text code-text">${it.code}</span>
+          <span class="meta-text">${it.rarity}</span>
+          <span class="meta-text">${it.cond}</span>
+        </div>
+        <div class="card-codes">
+          <!-- 这一屏**只读**：没有价格输入框、没有「标记已上架」竖条、没有起点。
+               已经归档进库位的卡不该在这儿改 —— 要改只能整批撤回（真代码里就是这样）。 -->
+          <span class="loc-serial">${c.serial}</span>
+          <span class="chip b" style="margin-left:auto">${c.pack}</span>
+          <span class="cprice-ro">${it.jhj ? 价格显示(it.jhj) : '—'}</span>
+        </div>
+        ${坏 && it.err ? `<div class="cerr">${it.err}</div>` : ''}
+      </div>
+    </div>`
+}
+
+function 渲染留档() {
+  document.getElementById('aRows').textContent = 留档.length
+  const box = document.getElementById('aBody')
+  if (!留档.length) { box.innerHTML = `<tr><td colspan="11" class="empty">还没有上架记录</td></tr>`; return }
+  box.innerHTML = 留档.map(r => {
+    const 价 = (r.jhj || r.low)
+      ? `${r.jhj ? `<span class="jhj">¥${r.jhj}</span>` : ''}${r.jhj && r.low ? ' / ' : ''}${r.low ? `¥${r.low}` : ''}`
+      : '<span class="none">—</span>'
+    const 果 = r.ok ? '<span style="color:#22B573">成功</span>' : '<span style="color:#FF3B30">失败</span>'
+    return `<tr style="cursor:default">
+      <td><div>${r.pack}</div><div style="color:#AAA;font-size:11px">${r.t || ''}</div></td>
+      <td><div class="c-code">${r.code}</div><div class="c-name">${r.name || '<span style="color:#FF3B30">（无名称）</span>'}</div></td>
+      <td>${r.rarity}</td>
+      <td>${r.cond}</td>
+      <td>${r.note || '<span class="none">—</span>'}</td>
+      <td>${r.alt || '<span class="none">—</span>'}</td>
+      <td class="num ro">${r.old}</td>
+      <td class="num ro">${r.add}</td>
+      <td class="num target">${r.old + r.add}</td>
+      <td class="ret">${价}</td>
+      <td class="num">${果}</td>
+    </tr>`
+  }).join('')
+}
+
+// ============================================================
+// Tab / 返回
+// ============================================================
+// 当前停在哪一块。**唯一**的真相来源就是子胶囊上那个 on ——
+// 别处（返回、查看溯源退回）都来问它，免得再养一份"当前 tab"的副本跟它走散。
+function 当前块() {
+  const 亮 = document.querySelector('.sub-tabs .sub-tab.on')
+  return 亮 && 亮.dataset.tab === 'listed' ? 'listed' : 'pending'
+}
+
+// 切到某一块：亮对胶囊、只留那一屏、掐掉在跑的模拟、按需重画。
+function 切块(tab, 重画 = true) {
+  document.querySelectorAll('.sub-tabs .sub-tab').forEach(x =>
+    x.classList.toggle('on', x.dataset.tab === tab))
+  document.getElementById('viewPending').style.display = tab === 'pending' ? 'block' : 'none'
+  document.getElementById('viewListed').style.display = tab === 'listed' ? 'block' : 'none'
+  // 「查看溯源」、包详情、库位详情都不是独立的一块，切块顺手把它们收起来。
+  document.getElementById('viewTrace').style.display = 'none'
+  document.getElementById('viewDetail').style.display = 'none'
+  document.getElementById('viewLibDetail').style.display = 'none'
+  // 离开就掐掉正在跑的那一趟：详情只是 display:none，计时器可不认界面，
+  // 不停的话它会继续往一个你不在看的包里每 5 秒填一张，回来一看全绿了，莫名其妙。
+  // ① 整批也一样 —— 切走就等于放弃这一整批。**先 停跑() 再 停批跑()**（顺序见 停批跑 的注释）。
+  停跑()
+  停批跑()
+  if (重画) (tab === 'listed' ? 渲染已上架 : 渲染包列表)()
+}
+
+document.querySelectorAll('.sub-tabs .sub-tab').forEach(t => {
+  t.addEventListener('click', () => 切块(t.dataset.tab))
+})
+
+// ============================================================
+// 顶栏那四枚（本地库 / 云端库 / 待上架库 / 已上架库）
+// ============================================================
+// ⑤ v3：顶栏是**四枚**（跟真页面 auto-listing.vue:28-47 一字不差），
+//    而「待上架库」底下**另外**有那两枚子页签。所以是两层：
+//       顶栏 4 枚  →  待上架库底下再分 待上架包 / 已上架包
+//    子页签只在「待上架库」这一枚底下出现，切到别的库就收起来。
+//
+// ⚠️ 真代码要改的是 auto-listing.vue:473-480：现在 `sub` 是
+//    `topTab === 'listed' ? 'listed' : 'pending'` 的**纯派生值**，等于说
+//    「已上架」这块只有顶栏一个入口。这一版两个入口并存，派生就不成立了 ——
+//    `sub` 得变回真正独立的 ref（照 39b7503 删掉之前那版写）。
+//
+// ⚠️ **两处「已上架」的关系，按用户拍板的三步走**（上一版这里是"同一批卡的两个切法"，
+//    用户明确要三步，所以这一版把它们拆成了**前后两站**）：
+//      ① 待上架包（子页签）—— 能勾、能跑、能改。
+//      ② 已上架包（子页签）—— 本批点过「确认完成」的包。**中转站**：还没进库位，
+//         只读，但随时能「放回」①。切法按**包**。
+//      ③ 已上架库（顶栏）  —— 整批归档之后的卡。**终点站**：库封存、卡位重排过了，
+//         只能整批撤回。切法按**库位**（一个包散在几个库位、一个库位混装几个包）。
+//    ②③ 拆开之后，`待归档包` / `已归档包` 就是两个数组 —— 见文件上头那段的说明。
+//    真代码对应：②＝ListingBatch.donePacks（batches.js:284-335），
+//                ③＝state:'listed' 的批次（batches.js:25-243，那一步才真动库）。
+let 顶栏 = 'listing'   // local | cloud | listing | listed（默认停在待上架库）
+
+// 每枚页签对应哪一屏。local / cloud 在原型里没有内容（真页面有），
+// 所以它们不进这张表 —— 点了只弹提示，不做成能切过去（切过去是一片空白，更像坏了）。
+const 顶栏屏 = { listing: ['viewPending', 'viewListed'], listed: ['viewLibrary'] }
+
+function 切顶栏(key) {
+  if (key === 'local' || key === 'cloud') {
+    提示(key === 'local'
+      ? '本地库：真页面能切过去看已经上传到本机的卡。原型没有这块数据。'
+      : '云端库：真页面能切过去看云端的卡。原型没有这块数据。')
+    return
+  }
+  顶栏 = key
+  document.querySelectorAll('.library-tab .lib-tab').forEach(x =>
+    x.classList.toggle('on', x.id === 'tab' + key[0].toUpperCase() + key.slice(1)))
+  // 子页签只属于待上架库
+  document.getElementById('subTabs').style.display = key === 'listing' ? '' : 'none'
+  // 先全藏，再放这一屏该露的。详情 / 溯源 / 库位详情跟哪一屏都不沾，一起收掉。
+  ;['viewPending', 'viewListed', 'viewLibrary', 'viewDetail', 'viewTrace', 'viewLibDetail']
+    .forEach(id => { document.getElementById(id).style.display = 'none' })
+  // 切走就等于放弃这一整趟（详情只是 display:none，计时器可不认界面）
+  // **先 停跑() 再 停批跑()** —— 顺序见 停批跑 的注释。
+  停跑()
+  停批跑()
+  if (key === 'listing') {
+    切块(当前块())          // 待上架库这一屏自己再分子页签，交给 切块 收尾
+    return
+  }
+  顶栏屏[key].forEach(id => { document.getElementById(id).style.display = 'block' })
+  渲染库屏()
+}
+
+['local', 'cloud', 'listing', 'listed'].forEach(k => {
+  document.getElementById('tab' + k[0].toUpperCase() + k.slice(1))
+    .addEventListener('click', () => 切顶栏(k))
+})
+
+// 「查看溯源」：把「留档 · 行情」那张表整屏开出来（待上架包和已上架包两边都进得来）。
+function 开溯源() {
+  document.getElementById('viewPending').style.display = 'none'
+  document.getElementById('viewListed').style.display = 'none'
+  document.getElementById('viewLibrary').style.display = 'none'
+  document.getElementById('viewDetail').style.display = 'none'
+  document.getElementById('viewLibDetail').style.display = 'none'
+  document.getElementById('viewTrace').style.display = 'block'
+  停跑()
+  渲染留档()
+}
+document.getElementById('btnTrace').onclick = 开溯源
+document.getElementById('btnTrace2').onclick = 开溯源
+document.getElementById('btnTrace3').onclick = 开溯源
+document.getElementById('traceBack').onclick = () => 切顶栏(顶栏)
+
+// 库位详情那枚「‹ 返回库位列表」：只退一层 —— 回到「已上架库」，
+// 不是一路退到顶栏那一层。这是这一屏唯一的来路（从库位列表点进来的），所以写死就行。
+document.getElementById('ldBack').onclick = () => {
+  document.getElementById('viewLibDetail').style.display = 'none'
+  document.getElementById('viewLibrary').style.display = 'block'
+  window.scrollTo(0, 0)
+}
+
+// 顶栏那枚「‹ 返回」：
+//   ① 在包详情里 → 退回出发的那一块（待上架包 / 已上架包 / 已上架库 都可能）；
+//   ② 在「查看溯源」里 → 同样退回出发的那一块；
+//   ③ 在库位详情里 → 退到「已上架库」（不是顶栏那一层）；
+//   ④ 已经在列表上 → 真页面的 goBack 是 reLaunch 回首页，原型没有首页，什么也不做。
+document.getElementById('topBack').addEventListener('click', () => {
+  const 在详情 = document.getElementById('viewDetail').style.display !== 'none'
+  const 在溯源 = document.getElementById('viewTrace').style.display !== 'none'
+  const 在库位 = document.getElementById('viewLibDetail').style.display !== 'none'
+  if (!在详情 && !在溯源 && !在库位) return
+  切顶栏(顶栏)
+})
+
+// ============================================================
+// 按钮：原型只弹提示
+// ============================================================
+const 提示 = s => alert(s)
+// 顶栏右上那枚版本选择器：真页面 openVersionPicker 弹版本列表，选了换 selectedVersion。
+// 原型只有一个版本，点了说一声就好 —— 但得有个反应，不然看着像坏的。
+document.getElementById('verSel').onclick = () => 提示('游戏版本：游戏王日文（原型只放了一个版本）')
+// 顶栏那枚模式标签：绿=虚拟机AI 在线、红=离线。真页面点了弹模式选择。
+document.getElementById('modeTag').onclick = () => 提示('上架模式：虚拟机AI（在线）\n切到离线会变红，也会换成手动上架的另一套面板。')
+document.getElementById('btnParse').onclick = () => {
+  // 有待上架批次时先拦下来 —— 真页面就是这么拦的（auto-listing.vue:503）：
+  // 「待上架库还有未完成的批次，请先完成上架或撤回解析后再上传新库」。
+  // 不拦的话连点两次会在同一批实体卡上开出两批队列，同一张卡被两个批次锁。
+  if (包.length) {
+    提示('待上架包还有未完成的批次（批次 ' + 批次号 + '）。\n' +
+      '请先全部上架完，或者点「撤回」把这一批退掉，再传新库。')
+    return
+  }
+  提示('解析前会先弹一次：「请确认店铺已关闭」\n\n' +
+    '解析 = 把库里的卡按「编号前缀」分到各个包，\n' +
+    '包内再按 编号 + 罕贵度 + 品相 + 备注 + 异画 五维并成条目，\n' +
+    '并按已上架数据判定流程 A / B / C。\n' +
+    '解析完落一个批次号（格式 26-10-2-1），后面每张卡的输出都挂在它下面。')
+}
+// 「冻结」不再有按钮：代码里没有独立的冻结动作 —— POST /listings/queues 一次做两件事
+// （写队列 + 把实体卡码 status 改成 locked），解析完就冻上了，没有"手动冻一下"这回事。
+document.getElementById('btnRevert').onclick = () => 提示(
+  '撤回批次 ' + 批次号 + '：把这一批实体卡解锁放回池子，删掉队列和这一批的解析结果。\n' +
+  '批次号跟着清掉 —— 全系统里只有这一个动作能清它。')
+
+// ============================================================
+// 自动上架：把「跑」这件事演出来
+// ============================================================
+// 真实现是后端 VM 一张一张驱模拟器（`auto-execute-vm.js`），前端只收 WS 进度条数。
+// 原型这边用 setTimeout 把那个过程演一遍，好让流程能被看见：
+//   点「自动上架」→ 从起点那行往下走 → 每张停 5 秒（用户定的）→
+//   随机填一组输出参数 + 自动标记 → 挪到下一张。
+// 绿色和人工标的**不进队列**（用户定的「绿色的自动跳过」）—— 不跑它们，也不被它们打断。
+//
+// ⚠️ 这张表只演"跑"这一件事。它不落库、不写留档；真的落库要等接后端。
+const 每张毫秒 = 5000
+// ③ 一张卡跑完之后，压住不动的那一拍（毫秒）。这 1.2 秒里方框写的是**终态**
+//    （`成功` / `失败已跳过`），红行也是在这一拍里变红的。设 0 = 直接翻下一张。
+const 停一拍毫秒 = 1200
+
+// 人工放进去的失败率。**是给"红卡那条路"留的口子**：跑出红的 → 点右边「标记已上架」→ 变绿。
+// 一张都不失败的话，红卡、报错行、只读存档里那条红记录就永远看不到。不想要就改成 0。
+const 失败率 = 0.15
+// 跑挂时用的两句话：`状态` 进「运行状态(输出)」那一格，`挂` 是行底下那行红字（`err`）。
+// 两个不一样是因为真库里这俩本来就来自不同的地方。
+const 报错池 = [
+  { 状态: '失败：数量不匹配',   挂: '报错A03-数量' },
+  { 状态: '失败：没取到价格',   挂: '报错A07-价格没取到' },
+  { 状态: '失败：上架超时',     挂: '报错B02-上架超时' },
+  { 状态: '失败：店铺说已存在', 挂: '报错C01-店铺返回该编号已存在' },
+]
+
+// ② 一张卡最多试几遍。2 = 原样跑一遍 + 失败后自动重试一遍。
+// 真代码里这个数也得写死在一个地方 —— auto-execute-vm.js:279-339 那段循环要包一层。
+const 最多试次 = 2
+
+// ② 演示用的确定性失败规则。**它是原型专用的，真代码里没有这个东西。**
+// v2 的失败是 15% 随机（上面那个 失败率），跑一趟不一定看得到重试/跳过/标红，
+// 所以 v3 默认开着这个开关，让那三个状态**一定**跑得出来。
+// ⚠️ 别按"第 5 张必挂"来定 —— 这些包很小，排队() 又会剔掉绿的和人工标的：
+//    PHNI 的队列只剩 3 张、ALIN / BPRO 只剩 2 张，"第 5 张"永远轮不到。
+//    按**队列尾部**数，什么长度的队列都覆盖得到：
+//      最后一张   → 挂两遍 → 跑出「重试中 → 失败已跳过」
+//      倒数第二张 → 挂一遍 → 跑出「重试中 → 成功」
+//    队列只有 1 张时，那张按"最后一张"算，挂两遍。
+// 关掉开关（勾选条上那枚复选框）就退回 v2 的随机逻辑，两套并存。
+const 必挂次数 = (序, 队列长) => {
+  if (!演示失败) return 0
+  if (序 === 队列长 - 1) return 2
+  if (序 === 队列长 - 2) return 1
+  return 0
+}
+
+// 这次要跑哪些行：从起点那行往下排，绿的和人工标的剔掉。
+// 起点选在一张绿卡上、或者压根没选，都从那张（或第一张）往下走 —— 反正绿的会被剔掉。
+function 排队() {
+  const 全部 = [...当前包.items].sort(排序用)
+  const 起 = 选中行 ? 全部.findIndex(i => 行键(i) === 选中行) : 0
+  return 全部.slice(起 < 0 ? 0 : 起).filter(i => i.st !== 'green' && i.st !== 'manual')
+}
+
+// 假装这一张跑完了：随机填一组输出参数，再按结果标记。
+// ⚠️ `it.jhj` 是**集换价**那个字段，不是上架价 —— 留档表那列表头写的是「集换价 / 最低价」，
+//    读的正是 `it.jhj` / `it.low`，`确认完成` 也是原样把它俩抄进留档的。
+//    （行上那个小输入框虽然贴着「上架价格」的标签，绑的也是 `jhj` —— 这一处标签跟字段名
+//     对不齐是原型里本来就有的，这里跟着现有数据走，不去动它。）
+// 三个输出价的关系照真库来：**集换价 ≥ 最低价 ≥ 上架价**（集换价是行情，
+// 要卖得动就得往上架价那一头压）。不照这个来，看价格那列会觉得哪两个数写反了。
+// 假装这一张跑完了：填一组输出参数，再按结果标记。**返回这一遍挂没挂**，不返回的
+// 话叫它的 跑一步() 就只能去猜 it.st，而"第一遍挂了但还要重试"那一步 it.st 是不动的。
+//
+// ⚠️ v3 改了标记的时机：**失败这里不再写 it.st='red'**。
+//    第一遍挂了只是返回 true，由 跑一步() 决定要不要再来一遍；
+//    真正落红是在两遍都挂之后（那儿才写 st='red' + err + skipped）。
+//    真代码里这就是最要紧的一处 —— auto-execute-vm.js:331-334 现在是失败当场
+//    写 itemStatus='failed'，写下去之后重试就没地方落脚了（前端会当终态）。
+function 填结果(it, 序, 队列长, 遍) {
+  const 集 = 60 + Math.random() * 240
+  const 低 = Math.max(10, 集 * (0.78 + Math.random() * 0.12))
+  const 价 = Math.max(5, 低 * (0.90 + Math.random() * 0.08))
+  // 挂不挂：演示开关开着就走上面那条确定性规则（`遍` 是第几遍），关了就退回 v2 的随机。
+  const 挂了 = 演示失败 ? (遍 <= 必挂次数(序, 队列长)) : (Math.random() < 失败率)
+  const 结果 = 挂了 ? 报错池[Math.floor(Math.random() * 报错池.length)] : null
+  // 14 项照 `输出键` 那个顺序填。失败的行**只有前几个有值** —— 真库里也是断在这儿，
+  // 「行数/数量/价格」那几格空着，正好跟成功的那行对比着看。
+  it.outs = {
+    '编号(输出)': it.code,
+    '罕贵度(输出)': it.rarity,
+    '中文卡名(输出)': it.cn || '',
+    '中文别名(输出)': '',
+    '语种(输出)': '日文',
+    '游戏版本(输出)': '游戏王日文',
+    '行数(输出)': 挂了 ? '0' : '1',
+    '运行状态(输出)': 挂了 ? 结果.状态 : '成功',
+    '数量(输出)': 挂了 ? '' : String(Math.max(1, it.add)),
+    '价格(输出)': 挂了 ? '' : 价.toFixed(2),
+    '集换价(输出)': 挂了 ? '' : 集.toFixed(2),
+    '最低价(输出)': 挂了 ? '' : 低.toFixed(2),
+    '备注(输出)': it.note || '',
+    '输入框编号(输出)': 挂了 ? '' : it.code,
+  }
+  if (挂了) {
+    // 跑挂的这趟没取到价，行上就不放价。但**不动 `jhj`/`low`** ——
+    // 万一是你手敲进去的数，不能因为这一趟跑挂了就把你敲的抹了。
+    // 这里刻意**什么都不标**：st 保持原样（灰的仍是灰的），等 跑一步() 判完再说。
+    return true
+  }
+  it.st = 'green'
+  delete it.err
+  delete it.retries
+  delete it.skipped
+  it.jhj = 集.toFixed(2)
+  it.low = 低.toFixed(2)
+  return false
+}
+
+// 只重画卡片那一段。跑的时候每 5 秒调一次 —— 别去走 打开包()，那个顺带重算头部、
+// 重判起点，跑一趟要调几十次，白搭。代价是价格输入框会被重建（跑的时候没人在里头打字）。
+function 重画卡片() {
+  document.getElementById('dGroups').innerHTML =
+    `<div class="card-list">${[...当前包.items].sort(排序用).map(卡).join('')}</div>`
+  绑行事件()
+}
+
+// 头部那句灰字。跑的时候当进度条用，跑完当小结用 —— 都是同一行，不用再占地方。
+function 写进度(s) { document.getElementById('dHint').textContent = s }
+
+// 把跑着的一切停掉。跑完、急停、离开这个包**都走这里**，别处不要再各写一份清理。
+function 停跑() {
+  if (!跑中) return null
+  clearTimeout(跑中.计时器)
+  const 停 = 跑中
+  跑中 = null
+  return 停
+}
+
+// 两个按钮跟着跑没跑切换：跑的时候「自动上架」按不动（防连点起两个循环），
+// 「急停」才亮。这两个的状态只能从这儿改，不然迟早有一处忘了复位。
+// 另外整包不可上架的（有编号查不到卡牌目录）**也按不动** —— 跟包列表上那个
+// 「确认完成」同一套判据，别一处让跑一处不让。
+function 按钮随跑态() {
+  const 在跑 = !!跑中
+  const 自动 = document.getElementById('btnAuto')
+  自动.disabled = 在跑 || 只读包 || !!(当前包 && 当前包.state === 'blocked')
+  自动.textContent = 在跑 ? '执行中…' : '▶ 自动上架'
+  document.getElementById('btnStop').disabled = !在跑
+}
+
+function 跑一步() {
+  if (!跑中) return
+  const it = 跑中.队列[跑中.第几]
+  if (!it) return 跑收尾()
+  跑中.当前键 = 行键(it)
+  // ② 卡状态直接喂给 渲染当前卡框()。重试那一遍进来时 试 已经是 2，这里就转「重试中」。
+  跑中.卡状态 = 跑中.试 > 1 ? 'retrying' : 'running'
+  重画卡片()
+  写当前卡框(跑中)
+  // ① 列表发起的整批跑：包卡片上那条进度条也得跟着走 —— 不刷的话盯着列表
+  //    看什么动静都没有（详情屏那边看不见，这一趟压根不进详情屏）。
+  if (跑中.批) 渲染包列表()
+  写进度(`正在跑第 ${跑中.第几 + 1}/${跑中.队列.length} 张 · ${it.code} ${it.rarity}`
+    + (跑中.试 > 1 ? '（重试）' : '')
+    + (选中行 && 跑中.第几 === 0 ? '（起点）' : ''))
+  // 只在这 5 秒一张的演示里滚；`block:'nearest'` 是"看不见才滚"，不会把头部甩出屏幕。
+  const 行 = document.querySelector('#dGroups .card-row.running')
+  if (行) 行.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  跑中.计时器 = setTimeout(() => {
+    if (!跑中) return                 // 这 5 秒里被急停 / 离开这个包了
+    const 挂了 = 填结果(it, 跑中.第几, 跑中.队列.length, 跑中.试)
+    if (挂了 && 跑中.试 < 最多试次) {
+      // ② 第一遍挂 → **不落红、也不前进**，就地重来一遍。
+      //    整个「重试」就靠这一段：什么标记都不写，只是把 试 +1 把这一张再跑一次。
+      跑中.试++
+      冒一句(`「${it.code}」这一遍没跑成，自动重试一遍…`)
+      跑一步()
+      return
+    }
+    if (挂了) {
+      // ② 两遍都挂 → **到这儿才落红**，然后继续下一张（不是整批停）。
+      it.st = 'red'
+      it.retries = 跑中.试 - 1
+      it.skipped = true
+      // 这行红字**写死**，不走随机 `报错池.挂` —— 要断言"重试过一次还是挂了"这件事，
+      // 文案就不能每次都变。真正的失败原因在 it.outs['运行状态(输出)'] 里（点「详细」看）。
+      it.err = '重试 1 次仍失败 · 已跳过'
+      跑中.卡状态 = 'failed'
+    } else {
+      跑中.卡状态 = 'success'
+    }
+    // ③ 终态要先**显示出来**再走。不这么做的话，下一张的「正在跑」会当场把它盖掉，
+    //    方框里「成功 / 失败已跳过」这两个状态一辈子看不见 —— 而"刚跳过了哪张"
+    //    恰恰是这个框最该说的一件事（红行也会同时刷出来）。
+    重画卡片()
+    写当前卡框(跑中)
+    if (跑中.批) 渲染包列表()
+    跑中.试 = 1
+    跑中.第几++
+    // 停一拍再翻下一张。跟 `每张毫秒` 分开写：那是"跑一张要多久"（演 VM 的耗时），
+    // 这只是"给结果留一眼"。调成 0 就是 v2 那个一路不歇的样子。
+    跑中.计时器 = setTimeout(() => { if (跑中) 跑一步() }, 停一拍毫秒)
+  }, 每张毫秒)
+}
+
+function 开始跑() {
+  if (只读包) { 冒一句('这个包是存档，不能再跑。'); return }
+  if (当前包.state === 'blocked') { 冒一句('这个包有编号在卡牌目录里查不到，整包不允许上架。'); return }
+  if (跑中) { 冒一句('正在跑，要换起点先按「急停」。'); return }
+  const 队列 = 排队()
+  if (!队列.length) { 冒一句('这个包没有要跑的卡，绿色和人工标的都跳过了。'); return }
+  // 批: 批跑 —— 详情屏单独点「自动上架」时 批跑 是 null，这一趟就是"只跑这一个包"；
+  // 整批跑的时候是 跑下一个包() 建的，收尾时靠它决定要不要接着下一个包。
+  跑中 = { 包: 当前包.pack, 队列, 第几: 0, 当前键: null, 计时器: null,
+           试: 1, 卡状态: 'running', 批: 批跑 }
+  按钮随跑态()
+  跑一步()
+}
+
+function 跑收尾() {
+  const 跑 = 停跑()
+  if (!跑) return
+  重画卡片()
+  按钮随跑态()
+  const 数 = f => 当前包.items.filter(f).length
+  const 好 = 数(i => i.st === 'green' || i.st === 'manual')
+  const 坏 = 数(i => i.st === 'red')
+  const 剩 = 数(i => i.st === 'gray')
+  // ① 列表发起的整批：这个包跑完**自动接着下一个包**，不在这儿收尾。
+  //    先把包列表刷一遍 —— 这一包的红点、进度条、失败 chip 都得当场出来。
+  if (跑.批) {
+    渲染包列表()
+    跑下一个包()
+    return
+  }
+  // ② 失败的不点名、不汇总 —— 用户 2026-10-04 拍板：「标红就可以，我人工看」。
+  //    所以这行只说数，不说"卡在哪几张/哪个包"。红点就在列表上，自己看。
+  写进度(`「${跑.包}」这一趟跑完了 · 已上架 ${好} · 失败 ${坏}` +
+    (坏 ? `（红的就是失败的那几行）` : '') +
+    (剩 ? ` · 还没跑 ${剩} 张` : ' · 没有灰的了，可以点「确认完成」'))
+  // 方框改成这个包的小结。下次起跑会被覆盖，不删 DOM。
+  方框 = {
+    内容: `<span class="cc-label">这一趟跑完</span>
+           <span class="cc-state">已上架 ${好} · 失败 ${坏}</span>
+           <span class="cc-batch">${剩 ? `还有 ${剩} 张灰的没跑`
+             : (坏 ? `没有灰的了，但有 ${坏} 张红的必须先处理才能「确认完成」`
+                   : '没有灰的也没有红的，可以点「确认完成」')}</span>`,
+    档: 坏 ? 's-failed' : 's-success',
+    给谁: 'detail',
+  }
+  渲染当前卡框()
+}
+
+function 急停() {
+  const 跑 = 停跑()
+  if (!跑) { 冒一句('现在没在跑。'); return }
+  // 停在哪张，哪张就是下次的起点 —— 这就是「之后点任意一张就能从那张续跑」。
+  // 那张还没被填过（`st` 还是 gray），所以 排队() 会从它开始重跑。
+  选中行 = 跑.当前键
+  重画卡片()
+  按钮随跑态()
+  写进度(`已急停在第 ${跑.第几 + 1}/${跑.队列.length} 张（${跑.当前键}）。它就是新的起点，再点「自动上架」从这儿接着跑。`)
+  冒一句('已急停')
+  // ① 整批跑的时候，「终止」就是**整批都停** —— 不是只停当前这个包、接着跑下一个。
+  //    先 停跑() 再 停批跑()，顺序不能倒：停批跑会重画包列表，
+  //    而重画要读的是"已经停了"的状态。
+  if (跑.批) 停批跑('已终止 · 停在第 ' + 跑.批.第几 + '/' + 跑.批.名单.length + ' 个包（' + 跑.包 + '）· 第 ' + (跑.第几 + 1) + '/' + 跑.队列.length + ' 张')
+}
+
+// ============================================================
+// ① 整批跑：勾了几个包，一个包一个包地跑完
+// ============================================================
+// 编排只在 `批跑` 这一个对象里。**跨包的循环不写在 跑中 里** ——
+// 跑中 是"包内游标"，被 打开包()/切块()/急停() 三处按"跑一个包"的语义清理，
+// 把跨包队列塞进去，那三处就会各清一半。
+function 跑下一个包() {
+  if (!批跑) return
+  // 从头往后找**真的跑得动**的包：可能已经被「确认完成」搬走了、可能整包不可上架、
+  // 也可能包里已经没有要跑的卡（全绿了）。跳过它们不算"跑完"，继续往后找。
+  while (批跑.第几 < 批跑.名单.length) {
+    const p = 包.find(x => x.pack === 批跑.名单[批跑.第几])
+    批跑.第几++
+    if (!p || p.state === 'blocked') continue
+    当前包 = p
+    只读包 = false
+    选中行 = null          // 每个包都从第一张开始，不把上一个包的起点带过来
+    const 队列 = 排队()
+    if (!队列.length) continue
+    跑中 = { 包: p.pack, 队列, 第几: 0, 当前键: null, 计时器: null,
+             试: 1, 卡状态: 'running', 批: 批跑 }
+    跑一步()
+    return
+  }
+  // 名单走完了 —— 正常收尾。
+  // 顺带把勾选清空：这一批的名单已经跑完了，再留着它，下次点「开始上架」就会
+  // 拿同一份过期名单再走一遍空转（那些包已经没有灰卡了，只会冒一句"没有要跑的卡"）。
+  // **只在这一处清** —— 急停 / 主动终止 / 切屏走的是 停批跑() 那条路，勾选要留着，
+  // 好让人再点一下「开始上架」接着把没跑完的跑完。
+  选中包.clear()
+  停批跑()
+}
+
+// 把整批停掉。**终止就是终止**，名单里剩下的包一律不管（不是暂停）。
+// 四个入口都走这儿：跑完、急停、切块离开待上架包、再点一次「终止」。
+function 停批跑(原因) {
+  const 有过 = !!批跑
+  批跑 = null
+  // 注意：这儿**不动 跑中** —— 它是"包内游标"，由 停跑() 管。
+  // 四个入口都是「先 停跑()（或跑已经自然收尾）再 停批跑()」，顺序别倒。
+  if (有过) {
+    const 成功 = 包.reduce((a, p) => a + p.items.filter(i => i.st === 'green' || i.st === 'manual').length, 0)
+    const 失败 = 包.reduce((a, p) => a + p.items.filter(i => i.st === 'red').length, 0)
+    方框 = {
+      // 只说数：哪几张、哪几个包失败**不汇总**（用户拍板：标红就行，人工看）。
+      // 想知道是哪几张，列表上的红点、包卡片上的红 chip 一直都在。
+      内容: `<span class="cc-label">${原因 || '本批跑完了'}</span>
+             <span class="cc-state">失败 ${失败} 张</span>
+             <span class="cc-batch">待上架还剩 ${包.length} 个包 · 已上架 ${成功} 张</span>`,
+      档: 失败 ? 's-failed' : 's-success',
+      给谁: 'list',
+    }
+  }
+  渲染包列表()
+  渲染当前卡框()
+}
+
+// 勾选条上那枚按钮：没跑就起跑、跑着就终止。**同一个按钮两种身份**，
+// 所以文案和颜色只能在 渲染勾选条() 里改，别处不要各写一份。
+function 开始批跑() {
+  // 跑动中这枚按钮的身份是「■ 终止」—— 点它就是急停整批。
+  // **先 停跑() 再 停批跑()**：只清 批跑 的话，包内那个计时器还在跑，
+  // 5 秒后照样往列表上填一张，界面就成了"停了但还在动"。
+  if (批跑) { 停跑(); 停批跑('已终止'); 冒一句('已终止'); return }
+  const 全勾 = 包.filter(p => 选中包.has(p.pack))
+  const 名单 = 全勾.filter(p => p.state !== 'blocked').map(p => p.pack)
+  const 被剔 = 全勾.filter(p => p.state === 'blocked').map(p => p.pack)
+  if (!名单.length) {
+    冒一句(选中包.size ? '勾上的包全都有编号不在卡牌目录，整包不可上架，撤掉勾选再试。' : '先勾几个包。')
+    return
+  }
+  if (被剔.length) 冒一句(`${被剔.join('、')} 整包不可上架，这一趟绕开它。`)
+  if (跑中) 停跑()          // 防御：正常进不来，跑着的时候按钮是「终止」
+  批跑 = { 名单, 第几: 0 }
+  渲染包列表()              // 勾选框整排变灰、按钮变「■ 终止」
+  跑下一个包()
+}
+
+// ============================================================
+// ③ 当前卡方框
+// ============================================================
+// 一个 `方框` 对象 + 一个 write 函数，两个宿主（列表屏 / 详情屏）一起刷。
+// ★ 两种发起方式（列表整批 / 详情单包）共用这一套 —— 真代码里也是这样：
+//   服务端发的是同一份 item-progress（auto-execute-vm.js:269-272），前端不该分两套接。
+//   ⚠️ 真代码要改的**不是服务端**，是前端 auto-listing.vue:946-949 把
+//      msg.code / msg.rarity / msg.detail 丢掉了、只用了 index。留住它们就行。
+//   给谁: 'list' = 只出列表屏那个框；'detail' = 只出详情屏那个框。空内容两个都藏。
+let 方框 = { 内容: '', 档: 's-idle', 给谁: 'none' }
+
+// 跑动中每张卡调一次：把当前卡写进方框。状态字跟 跑中.卡状态 一一对应。
+function 写当前卡框(跑) {
+  const it = 跑.队列[跑.第几]
+  if (!it) return
+  const 状态字 = {
+    running: '正在跑',
+    retrying: `重试中（第 ${跑.试} 遍）`,
+    success: '成功',
+    failed: '失败已跳过',
+  }[跑.卡状态] || '正在跑'
+  const 第几包 = 跑.批 ? `包 ${跑.批.第几}/${跑.批.名单.length} · ` : ''
+  方框 = {
+    内容: `<span class="cc-label">${第几包}当前卡牌</span>
+           <span class="cc-code">${it.code} · ${it.rarity}</span>
+           <span class="cc-state">${状态字}</span>
+           <span class="cc-batch">第 ${跑.第几 + 1}/${跑.队列.length} 张${跑.试 > 1 ? ' · 第 2 遍' : ''}</span>`,
+    档: 's-' + 跑.卡状态,
+    给谁: 跑.批 ? 'list' : 'detail',
+  }
+  渲染当前卡框()
+}
+
+function 渲染当前卡框() {
+  const 列表框 = document.getElementById('curCardList')
+  const 详情框 = document.getElementById('curCardDetail')
+  const 给列表 = 方框.给谁 === 'list'
+  const 给详情 = 方框.给谁 === 'detail'
+  ;[列表框, 详情框].forEach((b, i) => {
+    b.innerHTML = 方框.内容
+    b.className = 'cur-card ' + 方框.档
+    b.style.display = ((i === 0 ? 给列表 : 给详情) && 方框.内容) ? '' : 'none'
+  })
+}
+
+document.getElementById('btnAuto').onclick = 开始跑
+document.getElementById('btnStop').onclick = 急停
+document.getElementById('btnBatchRun').onclick = 开始批跑
+document.getElementById('selAll').onclick = () => 设全选(!包.filter(p => p.state !== 'blocked').every(p => 选中包.has(p.pack)))
+document.getElementById('selDemo').onclick = () => {
+  演示失败 = !演示失败
+  document.getElementById('selDemoBox').classList.toggle('checked', 演示失败)
+  冒一句(演示失败 ? '演示失败：开（每个包队列最后一张必挂两遍、倒数第二张挂一遍）' : '演示失败：关（退回 15% 随机）')
+}
+读顺序()
+渲染包列表()
+渲染已上架()
+渲染库屏()     // 顶栏第四枚那一屏（开局藏着的，但先画好，切过去不用等）
+渲染留档()
+按钮随跑态()     // 开局没在跑：「急停」得是灰的，不能让人一上来就按得动
+渲染当前卡框()   // 开局方框是空的，这一句会把两个都藏起来
+</script>
+</body>
+</html>

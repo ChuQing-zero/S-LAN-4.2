@@ -1,0 +1,26 @@
+node_modules/
+Client/dist/
+Storage/
+.env
+.env.*
+!*.env.example
+*.log
+Thumbs.db
+.DS_Store
+_prep/
+
+# 构建产物与临时文件（2026-11-21 补充）
+*.o
+*.d
+*.crf
+*.lst
+*.axf
+*.lnp
+*.map
+*.dep
+*.hex.bak
+*.uvguix.*
+~$*
+__pycache__/
+*.pyc
+Server/src/uploads/

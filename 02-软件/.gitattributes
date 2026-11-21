@@ -1,0 +1,26 @@
+# ===== 行尾规范（不依赖各台机器的 core.autocrlf 设置）=====
+* text=auto
+
+# Windows 批处理/脚本必须 CRLF，否则 goto/label 会失效
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ===== 二进制（禁止做行尾转换/文本 diff）=====
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.zip binary
+*.xlsx binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.exe   binary
+*.dll   binary
+
+# ===== Git 显示 =====
+*.json linguist-language=JSON

@@ -1,0 +1,42 @@
+# ===== Node 依赖 =====
+node_modules/
+
+# ===== 前端编译产物 =====
+Client/dist/
+Client/unpackage/
+Client/certs/
+
+# ===== 运行时数据（MongoDB/缓存/上传/日志）=====
+Storage/mongo/
+Storage/cache/
+Storage/uploads/
+Storage/logs/
+Storage/card-catalog/
+# 官方卡牌资料（ygocdb 全量扫描结果，3.3 MB，生成脚本见 Server/scripts/fetch-official-cards.js）
+# 和 card-catalog 同待遇：本机数据、不进 git。真正落库后由数据库备份兜底。
+Storage/card-official/
+Storage/backup/
+Storage/backup-*/
+Storage/tcg-data/
+
+# 后端上传目录（用户上传的卡图原图，本机数据）
+Server/uploads/
+# 后端的运行时数据（软删掉的图、改编号的审计 JSON 与图片备份）。
+# 注意上面那批 `Storage/xxx/` 规则**匹配不到这里** —— 带中间斜杠的模式是锚定在
+# 仓库根的，只认 `<根>/Storage/`，而这份 Storage 在 `Server/` 底下。
+# autoGitSave 走的是 `git add -A`，不挡住的话每次优雅关闭都会把几十 MB 的图片
+# 备份提交进仓库。用 `Server/Storage/` 整片挡掉，别逐个子目录列（漏一个就白挡）。
+Server/Storage/
+
+# ===== 环境变量（含密钥/本机 IP，绝不提交）=====
+.env
+.env.*
+!*.env.example
+
+# ===== 日志 =====
+*.log
+
+# ===== 系统 =====
+Thumbs.db
+.DS_Store
+desktop.ini

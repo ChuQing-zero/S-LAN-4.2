@@ -1,0 +1,39 @@
+{
+  "name": "测试E",
+  "desc": "",
+  "steps": [
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": true,
+      "stepType": "click",
+      "stepDuration": 0.1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 299,
+          "y": 563,
+          "keyword": "取消",
+          "outputVar": "输入框编号(输出)",
+          "offset": -1
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": true,
+      "stepType": "click",
+      "stepDuration": 0.1,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 299,
+          "y": 563
+        }
+      ]
+    }
+  ]
+}

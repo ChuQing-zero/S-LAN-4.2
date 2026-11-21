@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>拍照测试 - 84a42c2 逻辑</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#f5f5f7;color:#1a1a1a;font-family:system-ui,sans-serif;padding:20px;min-height:100vh}
+h1{text-align:center;font-size:20px;margin-bottom:20px}
+.btn{display:block;width:64px;height:64px;margin:0 auto 20px;border:none;border-radius:32px;font-size:28px;background:#f44;color:#fff;box-shadow:0 4px 12px rgba(255,0,0,.35);cursor:pointer;line-height:64px;text-align:center}
+#status{padding:14px;border-radius:12px;font-size:14px;line-height:1.6;margin:16px 0;display:none;text-align:center}
+#status.show{display:block}
+#status.loading{background:#fff3cd;color:#856404}
+#status.err{background:#ffe0e0;color:#c00}
+#status.ok{background:#d4edda;color:#155724}
+.result{background:#fff;border-radius:16px;padding:16px;display:none;gap:14px;align-items:flex-start;box-shadow:0 2px 12px rgba(0,0,0,.04);margin:16px 0}
+.result.show{display:flex}
+.result img{width:100px;height:100px;border-radius:8px;background:#eee;object-fit:cover;flex-shrink:0}
+.result .info{flex:1}
+.result .code{font-size:20px;font-weight:bold;color:#f44}
+.result .name{font-size:16px;color:#333;margin-top:4px}
+.result .cn{font-size:14px;color:#666;margin-top:2px}
+.result .ext{font-size:12px;color:#4a90d9;margin-top:6px;background:#f0f4ff;padding:2px 8px;border-radius:4px;display:inline-block}
+.log{background:#1a1a2e;color:#aaa;border-radius:10px;padding:12px;margin:10px 0;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto;display:none;line-height:1.6}
+.log.show{display:block}
+.log .ok{color:#6f6}
+.log .err{color:#f66}
+.log .warn{color:#fc3}
+</style>
+</head>
+<body>
+
+<h1>📷 拍照测试</h1>
+
+<!-- 隐藏的文件输入 -->
+<input id="cam" type="file" capture="environment" accept="image/*" style="position:fixed;top:-9999px;left:-9999px;opacity:0">
+
+<button class="btn" onclick="document.getElementById('cam').click()">📷</button>
+
+<div id="status"></div>
+<div class="result" id="result">
+  <img id="rimg" src="">
+  <div class="info">
+    <div class="code" id="rcode"></div>
+    <div class="name" id="rname"></div>
+    <div class="cn" id="rcn"></div>
+    <div class="ext" id="rext"></div>
+  </div>
+</div>
+<div class="log" id="log"></div>
+
+<script>
+// ====== 和 84a42c2 同样的参数 ======
+const DOUBAO_KEY = 'YOUR_ARK_API_KEY'
+const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses'
+const DOUBAO_MODEL = 'doubao-seed-2-0-mini-260428'
+const TOKEN = localStorage.getItem('token') || ''
+
+// ====== 和 84a42c2 同样的 prompt ======
+const PROMPT = '识别游戏王卡牌编号：前缀为2-4位字母数字，中间横杠分隔，搭配JP等两位语种代码，后缀为字母+数字组合，只提取该格式编号，忽略卡牌所有文字、效果、杂码。拍摄对焦卡牌底部小字，画面清晰无遮挡，仅输出识别出的编号，不要任何多余内容。如QCAC-JP001 如果无法识别或不确定卡牌编号，请只返回 FAIL 三个字母，不要返回其他任何内容。'
+
+var $=function(id){return document.getElementById(id)}
+function log(msg,cls){
+  var l=$('log');l.classList.add('show')
+  l.innerHTML+='<span class="'+(cls||'')+'">'+msg+'</span>\n'
+  l.scrollTop=l.scrollHeight
+}
+function status(cls,msg){var s=$('status');s.className='show '+cls;s.textContent=msg}
+
+// ====== 和 84a42c2 同样的 readFileAsBase64 ======
+function readFileAsBase64(file){
+  return new Promise(function(resolve,reject){
+    var reader=new FileReader()
+    reader.onloadend=function(){
+      var base64=reader.result.split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror=reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// ====== 和 84a42c2 同样的 recognizeCardByDoubao ======
+async function recognizeCardByDoubao(file){
+  var base64=await readFileAsBase64(file)
+  var mime=file.type||'image/jpeg'
+
+  log('读取完成 base64长度:'+base64.length)
+
+  var body={
+    model: DOUBAO_MODEL,
+    input: [{role:'user',content:[
+      {type:'input_image',image_url:'data:'+mime+';base64,'+base64},
+      {type:'input_text',text:PROMPT}
+    ]}]
+  }
+
+  log('发送到 '+DOUBAO_URL)
+  log('model: '+DOUBAO_MODEL)
+
+  var resp=await fetch(DOUBAO_URL,{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+DOUBAO_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  })
+
+  log('HTTP '+resp.status,'ok')
+
+  if(!resp.ok){
+    var errText=await resp.text()
+    throw new Error('API错误 '+resp.status+': '+errText.substring(0,200))
+  }
+
+  var data=await resp.json()
+  var content=''
+  var output=data.output||[]
+  for(var i=0;i<output.length;i++){
+    var o=output[i]
+    if(o.type==='message'&&o.content){
+      for(var j=0;j<o.content.length;j++){
+        if(o.content[j].type==='output_text') content+=o.content[j].text
+      }
+    }
+  }
+  log('返回: '+content.trim())
+  return content.trim()
+}
+
+// ====== 拍照 ======
+$('cam').onchange=async function(){
+  var file=this.files[0]
+  this.value=''
+  if(!file)return
+
+  $('log').innerHTML=''; $('log').classList.add('show')
+  $('result').classList.remove('show')
+
+  log('文件: '+file.name+' '+file.type+' '+(file.size/1024).toFixed(0)+'KB')
+  status('loading','⏳ 识别中…')
+
+  try{
+    var cardCode=await recognizeCardByDoubao(file)
+
+    if(!cardCode||cardCode==='FAIL'){
+      status('err','❌ 未识别到编号')
+      return
+    }
+
+    // 查卡牌数据库
+    log('查询卡牌: /v1/api/card-info/'+cardCode)
+    var ci=await fetch('/v1/api/card-info/'+encodeURIComponent(cardCode),{
+      headers:{'Authorization':'Bearer '+TOKEN}
+    })
+    if(ci.ok){
+      var ciData=await ci.json()
+      log('卡牌数据: '+JSON.stringify(ciData))
+      var ext=String(ciData.extCode||'').padStart(8,'0')
+
+      $('rcode').textContent=cardCode
+      $('rname').textContent=ciData.jpName||''
+      $('rcn').textContent=ciData.cnName||''
+      $('rext').textContent='卡密: '+ext
+
+      var imgUrl=ext?'/uploads/cards/'+ext+'.jpg':''
+      $('rimg').src=imgUrl
+      $('result').classList.add('show')
+
+      status('ok','✅ '+cardCode)
+    }else{
+      status('ok','✅ '+cardCode+' (数据库无记录)')
+      $('rcode').textContent=cardCode
+      $('result').classList.add('show')
+    }
+  }catch(e){
+    log('ERROR: '+e.message,'err')
+    status('err','❌ '+e.message)
+  }
+}
+
+// 显示登录状态
+if(TOKEN){
+  try{var u=JSON.parse(localStorage.getItem('user')||'{}');status('ok','已登录: '+(u.email||u.nickname||'?'))}catch(e){}
+}else{
+  status('err','未登录! 请先登录')
+}
+</script>
+</body>
+</html>

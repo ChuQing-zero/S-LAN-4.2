@@ -1,0 +1,94 @@
+{
+  "name": "删除",
+  "desc": "",
+  "steps": [
+    {
+      "name": "",
+      "desc": "点击卡牌",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 120,
+          "y": 600
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "删除",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 600,
+          "y": 100
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "确定",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 560,
+          "y": 700
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "数量减一",
+      "_open": false,
+      "stepType": "compute",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "{{数量}}",
+      "rightVar": "",
+      "template": "{{数量}}-1"
+    },
+    {
+      "name": "",
+      "desc": "比较数量",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{数量}}",
+      "compareRightVar": "",
+      "compareOp": "<=",
+      "compareValue": "0",
+      "trueJump": 6,
+      "falseJump": 1
+    },
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": false,
+      "stepType": "wait",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    }
+  ],
+  "oldName": "删除"
+}

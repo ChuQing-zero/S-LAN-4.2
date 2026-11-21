@@ -1,0 +1,29 @@
+{
+  "name": "测试G",
+  "desc": "",
+  "steps": [
+    {
+      "name": "",
+      "desc": "新步骤",
+      "_open": true,
+      "stepType": "find-click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "1",
+          "x": 0,
+          "y": 0,
+          "keywordVar": "{{品相备注}}",
+          "keyword": "设为集换价",
+          "offset": 1,
+          "outputVar": "行数(输出)",
+          "y1": 800,
+          "y2": 450,
+          "x1": 360,
+          "x2": 360
+        }
+      ]
+    }
+  ]
+}

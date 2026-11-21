@@ -1,0 +1,609 @@
+{
+  "name": "流程B-更新",
+  "desc": "更新已有上架(单个)：搜索→筛选→点行→改价→改量→保存",
+  "steps": [
+    {
+      "name": "1.0",
+      "desc": "三击搜索框",
+      "stepType": "tplclick",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "三击搜索框",
+          "x": 77,
+          "y": 135
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "2.0",
+      "desc": "删除旧内容",
+      "stepType": "press",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "退格删除",
+          "x": 0,
+          "y": 0,
+          "text": "backspace"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "判断是否有异画",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{异画}}",
+      "compareOp": "!=",
+      "compareValue": "",
+      "trueJump": 4,
+      "falseJump": 5
+    },
+    {
+      "name": "",
+      "desc": "拼接异画编号",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "{{卡牌编号}}",
+      "rightVar": "",
+      "template": "{{卡牌编号}}({{异画}})"
+    },
+    {
+      "name": "3.0",
+      "desc": "粘贴卡号",
+      "stepType": "input",
+      "stepVariable": "{{卡牌编号}}",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "粘贴卡号",
+          "x": 0,
+          "y": 0,
+          "text": "{{卡牌编号}}"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "3.5",
+      "desc": "等待粘贴完成",
+      "stepType": "wait",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "等待",
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "4.0",
+      "desc": "回车搜索",
+      "stepType": "press",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "回车",
+          "x": 0,
+          "y": 0,
+          "text": "enter"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "比较罕贵度",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{罕贵度}}",
+      "compareRightVar": "{{旧罕贵度}}",
+      "compareOp": "==",
+      "compareValue": "",
+      "trueJump": 14,
+      "falseJump": 9
+    },
+    {
+      "name": "5.0",
+      "desc": "打开筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "打开筛选",
+          "x": 1399,
+          "y": 184,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "5.1",
+      "desc": "重置筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "重置筛选",
+          "x": 577,
+          "y": 845,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "5.2",
+      "desc": "再次打开筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "再次打开筛选",
+          "x": 1402,
+          "y": 185
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "5.3",
+      "desc": "选择罕贵度",
+      "stepType": "click",
+      "stepVariable": "{{罕贵度}}",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "SER",
+          "x": 841,
+          "y": 193,
+          "_armed": false
+        },
+        {
+          "name": "UR",
+          "x": 584,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "SR",
+          "x": 900,
+          "y": 238,
+          "_armed": false
+        },
+        {
+          "name": "QCSER",
+          "x": 431,
+          "y": 191,
+          "_armed": false
+        },
+        {
+          "name": "PSER",
+          "x": 509,
+          "y": 193,
+          "_armed": false
+        },
+        {
+          "name": "20SER",
+          "x": 339,
+          "y": 189,
+          "_armed": false
+        },
+        {
+          "name": "HR",
+          "x": 575,
+          "y": 193,
+          "_armed": false
+        },
+        {
+          "name": "HPR",
+          "x": 637,
+          "y": 192,
+          "_armed": false
+        },
+        {
+          "name": "ESR",
+          "x": 701,
+          "y": 191,
+          "_armed": false
+        },
+        {
+          "name": "ESPR",
+          "x": 772,
+          "y": 192,
+          "_armed": false
+        },
+        {
+          "name": "PR",
+          "x": 1052,
+          "y": 193,
+          "_armed": false
+        },
+        {
+          "name": "CR",
+          "x": 529,
+          "y": 237,
+          "_armed": false
+        },
+        {
+          "name": "UTR",
+          "x": 467,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "NPR",
+          "x": 1025,
+          "y": 236,
+          "_armed": false
+        },
+        {
+          "name": "N",
+          "x": 331,
+          "y": 281,
+          "_armed": false
+        },
+        {
+          "name": "NR",
+          "x": 385,
+          "y": 281,
+          "_armed": false
+        },
+        {
+          "name": "SEMR",
+          "x": 915,
+          "y": 190,
+          "_armed": false
+        },
+        {
+          "name": "SEPR",
+          "x": 983,
+          "y": 189,
+          "_armed": false
+        },
+        {
+          "name": "UPR",
+          "x": 1112,
+          "y": 189,
+          "_armed": false
+        },
+        {
+          "name": "PGR",
+          "x": 1180,
+          "y": 189,
+          "_armed": false
+        },
+        {
+          "name": "GSER",
+          "x": 1309,
+          "y": 189,
+          "_armed": false
+        },
+        {
+          "name": "GMR",
+          "x": 339,
+          "y": 232,
+          "_armed": false
+        },
+        {
+          "name": "GR",
+          "x": 405,
+          "y": 229,
+          "_armed": false
+        },
+        {
+          "name": "USR",
+          "x": 702,
+          "y": 237,
+          "_armed": false
+        },
+        {
+          "name": "UMR",
+          "x": 833,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "SPR",
+          "x": 964,
+          "y": 233,
+          "_armed": false
+        },
+        {
+          "name": "NMR",
+          "x": 1095,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "NKC",
+          "x": 1159,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "R",
+          "x": 1213,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "RKC",
+          "x": 1274,
+          "y": 235,
+          "_armed": false
+        },
+        {
+          "name": "RPR",
+          "x": 1339,
+          "y": 232,
+          "_armed": false
+        }
+      ],
+      "_open": true
+    },
+    {
+      "name": "5.4",
+      "desc": "确定筛选",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "点确定",
+          "x": 1142,
+          "y": 841
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "6.0",
+      "desc": "点第一个结果",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 1,
+      "actions": [
+        {
+          "name": "点第一个结果",
+          "x": 65,
+          "y": 279
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "7.0",
+      "desc": "点对应行(唯一)",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "点第一行",
+          "x": 45,
+          "y": 341,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "判断集换价",
+      "_open": false,
+      "stepType": "compare",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "compareVar": "{{集换价}}",
+      "compareOp": "==",
+      "compareValue": "true",
+      "trueJump": 17,
+      "falseJump": 19
+    },
+    {
+      "name": "",
+      "desc": "点击集换价",
+      "_open": false,
+      "stepType": "click",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [
+        {
+          "name": "集换价",
+          "x": 236,
+          "y": 556,
+          "_armed": false
+        }
+      ]
+    },
+    {
+      "name": "",
+      "desc": "跳过价格",
+      "_open": false,
+      "stepType": "jump",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "jumpTo": 22
+    },
+    {
+      "name": "9.0",
+      "desc": "三击价格",
+      "stepType": "tplclick",
+      "stepVariable": "",
+      "stepDuration": 0.8,
+      "actions": [
+        {
+          "name": "三击价格",
+          "x": 132,
+          "y": 557,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "10.0",
+      "desc": "删旧价+输新价",
+      "stepType": "press",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "删除旧价",
+          "x": 0,
+          "y": 0,
+          "text": "backspace"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "11.0",
+      "desc": "输入新价格",
+      "stepType": "input",
+      "stepVariable": "{{价格}}",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "输入新价格",
+          "x": 0,
+          "y": 0,
+          "text": "{{价格}}"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "12.0",
+      "desc": "三击库存",
+      "stepType": "tplclick",
+      "stepVariable": "",
+      "stepDuration": 0.8,
+      "actions": [
+        {
+          "name": "三击库存",
+          "x": 131,
+          "y": 630,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "13.0",
+      "desc": "删旧量+输新量",
+      "stepType": "press",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "删除旧量",
+          "x": 0,
+          "y": 0,
+          "text": "backspace"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "14.0",
+      "desc": "输入新数量",
+      "stepType": "input",
+      "stepVariable": "{{数量}}",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "输入新数量",
+          "x": 0,
+          "y": 0,
+          "text": "{{数量}}"
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "15.0",
+      "desc": "点空白+保存+返回",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "点空白",
+          "x": 196,
+          "y": 631,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "16.0",
+      "desc": "点保存",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "点保存",
+          "x": 719,
+          "y": 837,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "17.0",
+      "desc": "返回列表",
+      "stepType": "click",
+      "stepVariable": "",
+      "stepDuration": 0.5,
+      "actions": [
+        {
+          "name": "返回",
+          "x": 31,
+          "y": 85,
+          "_armed": false
+        }
+      ],
+      "_open": false
+    },
+    {
+      "name": "",
+      "desc": "设置旧罕贵度",
+      "_open": false,
+      "stepType": "setvar",
+      "stepDuration": 0.5,
+      "stepVariable": "",
+      "actions": [],
+      "leftVar": "{{旧罕贵度}}",
+      "rightVar": "{{罕贵度}}"
+    }
+  ]
+}
