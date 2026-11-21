@@ -30,7 +30,7 @@ input[type=file] { display: none; }
 <input type="file" id="cameraInput" accept="image/*" capture="environment">
 
 <script>
-const DOUBAO_KEY = 'YOUR_ARK_API_KEY';
+const DOUBAO_KEY = '';  /* 已移除硬编码 Key：请从后端接口取 */
 const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses';
 const PROMPT = '识别游戏王卡牌编号：前缀为2-4位字母数字，中间横杠分隔，搭配JP等两位语种代码，后缀为字母+数字组合，只提取该格式编号，忽略卡牌所有文字、效果、杂码。拍摄对焦卡牌底部小字，画面清晰无遮挡，仅输出识别出的编号，不要任何多余内容。如QCAC-JP001';
 
